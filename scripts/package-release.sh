@@ -67,7 +67,7 @@ Install:
 Homebrew:
   brew tap aishuo07/glowkey
   brew trust aishuo07/glowkey
-  brew install --cask --no-quarantine glowkey
+  brew install --cask glowkey
 
 CLI after install:
   ~/bin/glowkey status
