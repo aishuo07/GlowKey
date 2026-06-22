@@ -33,6 +33,17 @@ For normal users:
 
 GlowKey bootstraps itself on first launch: menu bar, background reconnect restore, shortcuts, and `~/bin/glowkey`.
 
+Homebrew:
+
+```sh
+brew tap aishuo07/glowkey
+brew trust aishuo07/glowkey
+brew install --cask glowkey
+open /Applications/GlowKey.app
+```
+
+Homebrew 6 requires `brew trust` for third-party taps. Because this build is unsigned, macOS may still require right-click > Open on first launch.
+
 From this checkout:
 
 ```sh

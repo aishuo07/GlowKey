@@ -165,8 +165,15 @@ User install:
 
 ```sh
 brew tap YOUR_GITHUB_USERNAME/glowkey
+brew trust YOUR_GITHUB_USERNAME/glowkey
 brew install --cask glowkey
 open /Applications/GlowKey.app
+```
+
+Homebrew 6 requires explicit trust for third-party taps. Without `brew trust`, users may see:
+
+```text
+Refusing to load cask ... from untrusted tap
 ```
 
 Because the app is unsigned, users may still need:
