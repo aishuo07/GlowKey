@@ -48,6 +48,11 @@ if [ -f "$HOME/Applications/GlowKey.app/Contents/Resources/AppIcon.png" ]; then
   cp "$HOME/Applications/GlowKey.app/Contents/Resources/AppIcon.png" "$RESOURCES_DIR/AppIcon.png"
 fi
 
+for binary in glowkey glowkey-shade glowkey-hotkeys glowkey-daemon glowkey-menubar; do
+  codesign --force --sign - "$MACOS_DIR/$binary"
+done
+codesign --force --sign - "$APP_DIR"
+
 cp "$ROOT_DIR/scripts/install-cli.sh" "$WORK_DIR/install-cli.sh"
 chmod 755 "$WORK_DIR/install-cli.sh"
 
@@ -58,6 +63,11 @@ Install:
 1. Move GlowKey.app to /Applications or ~/Applications.
 2. Right-click GlowKey.app, choose Open, then confirm Open.
 3. GlowKey installs its menu bar, background restore, shortcuts, and CLI automatically.
+
+Homebrew:
+  brew tap aishuo07/glowkey
+  brew trust aishuo07/glowkey
+  brew install --cask --no-quarantine glowkey
 
 CLI after install:
   ~/bin/glowkey status

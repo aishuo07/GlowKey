@@ -39,11 +39,11 @@ Homebrew:
 ```sh
 brew tap aishuo07/glowkey
 brew trust aishuo07/glowkey
-brew install --cask glowkey
+brew install --cask --no-quarantine glowkey
 open /Applications/GlowKey.app
 ```
 
-Homebrew 6 requires `brew trust` for third-party taps. Because this build is unsigned, macOS may still require right-click > Open on first launch.
+Homebrew 6 requires `brew trust` for third-party taps. `--no-quarantine` is required until GlowKey is Apple-notarized; otherwise macOS can show a misleading “damaged” warning for the unsigned app.
 
 Shortcuts:
 

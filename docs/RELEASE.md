@@ -167,7 +167,7 @@ User install:
 ```sh
 brew tap YOUR_GITHUB_USERNAME/glowkey
 brew trust YOUR_GITHUB_USERNAME/glowkey
-brew install --cask glowkey
+brew install --cask --no-quarantine glowkey
 open /Applications/GlowKey.app
 ```
 
@@ -176,6 +176,8 @@ Homebrew 6 requires explicit trust for third-party taps. Without `brew trust`, u
 ```text
 Refusing to load cask ... from untrusted tap
 ```
+
+Until GlowKey is Apple-notarized, use `--no-quarantine` for Homebrew installs. Without it, macOS may show a misleading “damaged” warning for the unsigned app.
 
 Because the app is unsigned, users may still need:
 
