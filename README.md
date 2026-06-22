@@ -1,40 +1,23 @@
 # GlowKey
 
-GlowKey is a zero-config macOS display comfort utility.
+Zero-config brightness control for Mac external displays.
 
-Product promise:
+GlowKey keeps the normal Mac brightness keys for the built-in display, then adds simple external-display control from the menu bar, keyboard shortcuts, and CLI.
 
-> Your external display brightness is controllable from the keyboard without breaking native Mac brightness behavior.
+## What It Does
 
-The app should use real hardware brightness when possible and fall back to smooth software dimming when hardware control is blocked. Users should not need to understand DDC/CI, gamma tables, VCP codes, docks, or DisplayLink.
+- Shows a compact menu-bar app with one brightness slider per display.
+- Controls external monitors with real hardware brightness when the display supports it.
+- Falls back to smooth software dimming when hardware control is blocked.
+- Remembers brightness per display and reapplies it after reconnects.
+- Supports cursor-based shortcuts for the external display your mouse is currently on.
+- Keeps technical details out of the normal UI.
 
-## Current Status
-
-GlowKey currently includes:
-
-- A menu-bar app with one slider per display.
-- Native MacBook brightness control without hijacking F1/F2.
-- External display control through DDC/CI when available.
-- Automatic software dimming fallback when hardware control is blocked.
-- Per-display brightness state, reconnect restore, and optional external-display sync.
-- Cursor-based external display shortcuts: `fn + F1` and `fn + F2`.
-- Fallback external display shortcuts: `command + option + -` and `command + option + =`.
-- A reusable Swift core plus CLI.
-
-Advanced hardware details stay in debug CLI commands instead of the normal UI.
+Plain F1/F2 keep controlling the MacBook display. GlowKey shortcuts control external displays.
 
 ## Install
 
-For normal users:
-
-1. Download `GlowKey-dev-macos.zip` from GitHub Releases.
-2. Unzip it.
-3. Move `GlowKey.app` to `/Applications`.
-4. Right-click `GlowKey.app`, choose `Open`, then confirm `Open`.
-
-GlowKey bootstraps itself on first launch: menu bar, background reconnect restore, shortcuts, and `~/bin/glowkey`.
-
-Homebrew:
+### Homebrew
 
 ```sh
 brew tap aishuo07/glowkey
@@ -43,83 +26,213 @@ brew install --cask glowkey
 open /Applications/GlowKey.app
 ```
 
-Homebrew 6 requires `brew trust` for third-party taps. GlowKey is currently unsigned, so the cask clears Homebrew quarantine after install to avoid macOS showing a misleading “damaged” warning.
+Homebrew 6 requires `brew trust` for third-party taps. GlowKey is currently unsigned, so the cask clears quarantine after install to avoid macOS showing a misleading “damaged” warning.
 
-Shortcuts:
+To upgrade:
 
-- `fn + F1` decreases the external display under the mouse cursor.
-- `fn + F2` increases the external display under the mouse cursor.
-- `command + option + -` and `command + option + =` remain available as fallback shortcuts.
-- Plain Mac brightness keys keep controlling the built-in display normally.
+```sh
+brew update
+brew upgrade --cask glowkey
+```
 
-From this checkout:
+To uninstall:
+
+```sh
+brew uninstall --cask glowkey
+```
+
+### Zip
+
+1. Download the latest `GlowKey-v*-macos.zip` from [GitHub Releases](https://github.com/aishuo07/GlowKey/releases).
+2. Unzip it.
+3. Move `GlowKey.app` to `/Applications`.
+4. Right-click `GlowKey.app`, choose `Open`, then confirm `Open`.
+
+Right-click open is needed until GlowKey is signed and notarized with an Apple Developer account.
+
+## First Launch
+
+Open `GlowKey.app`. It starts:
+
+- The menu-bar app.
+- The reconnect/background restore helper.
+- The external-display shortcut helper.
+- The `glowkey` CLI in `~/bin/glowkey`.
+
+If shortcuts do not work, macOS may require Accessibility permission. Open:
+
+```text
+System Settings -> Privacy & Security -> Accessibility
+```
+
+Then allow `GlowKey`.
+
+## Usage
+
+### Menu Bar
+
+Click the GlowKey icon in the macOS menu bar.
+
+You can:
+
+- Drag the global/external display sliders.
+- Control each display independently.
+- Open the shortcuts panel.
+- Quit the menu-bar app.
+
+GlowKey does not show DDC, gamma, VCP, or hardware debug wording in the normal UI. It just applies the best available method.
+
+### Keyboard Shortcuts
+
+Default shortcuts:
+
+```text
+fn + F1    decrease the external display under the mouse cursor
+fn + F2    increase the external display under the mouse cursor
+```
+
+Fallback shortcuts:
+
+```text
+command + option + -
+command + option + =
+```
+
+The fallback shortcuts control external displays when `fn + F1/F2` are not convenient.
+
+### CLI
+
+After install:
+
+```sh
+~/bin/glowkey status
+~/bin/glowkey displays
+~/bin/glowkey set 70
+~/bin/glowkey set dell 60
+~/bin/glowkey set "DELL P3223QE" 60
+~/bin/glowkey up
+~/bin/glowkey down
+~/bin/glowkey sync on
+~/bin/glowkey sync off
+~/bin/glowkey reset
+```
+
+Run CLI commands from the normal macOS Terminal app, not a remote shell, so macOS exposes the active display session.
+
+## Troubleshooting
+
+### App Says It Is Damaged
+
+If installed with Homebrew, upgrade to the latest cask first:
+
+```sh
+brew update
+brew upgrade --cask glowkey
+```
+
+If macOS still blocks it:
+
+```sh
+find /Applications/GlowKey.app -exec xattr -d com.apple.quarantine {} \; 2>/dev/null || true
+open /Applications/GlowKey.app
+```
+
+### Shortcuts Do Not Work
+
+Check the helper:
+
+```sh
+~/bin/glowkey hotkeys status
+~/bin/glowkey hotkeys start
+```
+
+Then allow GlowKey in:
+
+```text
+System Settings -> Privacy & Security -> Accessibility
+```
+
+### Brightness Does Not Go Low Enough
+
+Some monitors clamp their real hardware backlight range. GlowKey handles this by keeping hardware brightness at the monitor’s floor and adding software dimming below that point.
+
+### Hardware Brightness Is Not Available
+
+GlowKey will still dim the display using fallback dimming. For better hardware compatibility, direct USB-C or DisplayPort connections usually work better than HDMI adapters, docks, or DisplayLink paths.
+
+### Check Current State
+
+```sh
+~/bin/glowkey status
+~/bin/glowkey doctor
+```
+
+For debug output:
+
+```sh
+~/bin/glowkey status --debug
+~/bin/glowkey debug ddc-probe
+~/bin/glowkey debug hardware-probe
+```
+
+## Development
+
+Build from source:
 
 ```sh
 swift build
+sh scripts/smoke-test.sh
 ./bin/glowkey install
 ```
 
-Install creates:
+Useful development commands:
+
+```sh
+./bin/glowkey displays
+./bin/glowkey doctor
+./bin/glowkey status --json
+./bin/glowkey menubar start
+./bin/glowkey menubar stop
+./bin/glowkey daemon status
+./bin/glowkey hotkeys start
+./bin/glowkey hotkeys start 5 external --down cmd+opt+- --up cmd+opt+plus
+./bin/glowkey hotkeys stop
+```
+
+Local install creates:
 
 - `~/Applications/GlowKey.app`
 - `~/bin/glowkey`
-- A user LaunchAgent for reconnect restore/background mode
+- `~/bin/lumensync` as a legacy compatibility symlink
+- A user LaunchAgent for reconnect/background restore
 - Menu-bar and shortcut helpers
 
-Uninstall:
+Uninstall local install:
 
 ```sh
 ~/bin/glowkey uninstall
 ```
 
-## Release Package
+## Release
 
-Create a distributable macOS zip:
+Create a release zip:
 
 ```sh
-scripts/package-release.sh dev
+scripts/package-release.sh v0.1.3
 ```
 
 The artifact is written to:
 
 ```sh
-dist/GlowKey-dev-macos.zip
+dist/GlowKey-v0.1.3-macos.zip
 ```
 
-The zip contains `GlowKey.app`, `install-cli.sh`, license files, and a short install README.
+Maintainer release steps and Homebrew tap details are documented in [docs/RELEASE.md](docs/RELEASE.md).
 
-Maintainer release steps, GitHub Release text, and Homebrew tap templates are documented in [docs/RELEASE.md](docs/RELEASE.md).
+## Project Principles
 
-## Development
-
-```sh
-swift build
-sh scripts/smoke-test.sh
-./bin/glowkey displays
-./bin/glowkey doctor
-./bin/glowkey status
-./bin/glowkey status --json
-./bin/glowkey hotkeys start
-./bin/glowkey hotkeys start 5 external --down cmd+opt+- --up cmd+opt+plus
-./bin/glowkey hotkeys status
-./bin/glowkey hotkeys stop
-./bin/glowkey set 70
-./bin/glowkey set dell 60
-./bin/glowkey set "DELL P3223QE" 60
-./bin/glowkey sync on
-./bin/glowkey sync off
-./bin/glowkey down
-./bin/glowkey up 5
-./bin/glowkey reset
-```
-
-Run these commands from the normal macOS Terminal app, not a remote or automation shell, so macOS exposes the active display session.
-
-## Principles
-
-- No setup for normal users.
-- Always do something when brightness changes.
-- Prefer real hardware brightness.
-- Fall back quietly when hardware control is blocked.
-- Show simple status: `Real brightness`, `Software dimming`, or `Limited control`.
-- Keep advanced diagnostics available, but out of the main flow.
+- Normal users should not need to know what DDC/CI, gamma, VCP, or DisplayLink means.
+- If real hardware brightness works, use it.
+- If hardware brightness is blocked, still make brightness visibly change.
+- Keep MacBook brightness behavior native.
+- Keep advanced diagnostics in the CLI, not the main UI.
