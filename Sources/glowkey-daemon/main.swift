@@ -4,6 +4,7 @@ import GlowKeyCore
 
 final class GlowKeyDaemon: @unchecked Sendable {
     private let stateStore = RuntimeStateStore()
+    private let controller = GlowKeyController()
     private var lastApply = Date.distantPast
 
     func run() {
@@ -49,7 +50,7 @@ final class GlowKeyDaemon: @unchecked Sendable {
             return
         }
 
-        let displays = (try? GlowKeyController().displays()) ?? []
+        let displays = (try? controller.displays()) ?? []
         var appliedDisplayIDs = Set<String>()
         for display in displays {
             let id = String(display.id)
@@ -57,29 +58,16 @@ final class GlowKeyDaemon: @unchecked Sendable {
                 continue
             }
             appliedDisplayIDs.insert(id)
-            runCLI(arguments: ["set", id, String(brightness)])
+            applyStoredBrightness(brightness, selector: id)
         }
 
         if appliedDisplayIDs.isEmpty {
-            runCLI(arguments: ["set", state.selector, String(state.brightness)])
+            applyStoredBrightness(state.brightness, selector: state.selector)
         }
     }
 
-    private func runCLI(arguments: [String]) {
-        let currentExecutable = URL(fileURLWithPath: CommandLine.arguments[0])
-        let candidate = currentExecutable.deletingLastPathComponent().appendingPathComponent("glowkey")
-        guard FileManager.default.isExecutableFile(atPath: candidate.path) else {
-            return
-        }
-
-        let process = Process()
-        process.executableURL = candidate
-        process.arguments = arguments
-        process.standardInput = FileHandle(forReadingAtPath: "/dev/null")
-        process.standardOutput = FileHandle(forWritingAtPath: "/dev/null")
-        process.standardError = FileHandle(forWritingAtPath: "/dev/null")
-        try? process.run()
-        process.waitUntilExit()
+    private func applyStoredBrightness(_ percentage: Int, selector: String) {
+        _ = try? controller.applyBrightness(Brightness(percentage), selector: DisplaySelector(selector))
     }
 }
 
