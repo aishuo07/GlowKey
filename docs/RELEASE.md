@@ -91,8 +91,9 @@ GlowKey installs its menu bar, background reconnect restore, shortcuts, and CLI 
 
 ## Shortcuts
 
-- `cmd + option + -` decreases external display brightness.
-- `cmd + option + =` increases external display brightness.
+- `fn + F1` decreases the external display under the mouse cursor.
+- `fn + F2` increases the external display under the mouse cursor.
+- `cmd + option + -` and `cmd + option + =` remain available as fallback shortcuts.
 
 Mac brightness keys keep controlling the MacBook display normally.
 

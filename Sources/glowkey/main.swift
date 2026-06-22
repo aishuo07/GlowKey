@@ -66,9 +66,9 @@ struct GlowKeyCLI {
             }
             try hotkeyProcessManager.start(
                 step: 5,
-                selector: "external",
-                downShortcut: "cmd+opt+-",
-                upShortcut: "cmd+opt+="
+                selector: "cursor",
+                downShortcut: "fn+f1",
+                upShortcut: "fn+f2"
             )
             Thread.sleep(forTimeInterval: 0.2)
             print("GlowKey installed for this user.")
@@ -404,7 +404,14 @@ struct GlowKeyCLI {
     private static func resolveSelectorArgument(_ rawSelector: String, controller: GlowKeyController) throws -> String {
         let selector = rawSelector.trimmingCharacters(in: .whitespacesAndNewlines)
         let lowercased = selector.lowercased()
-        if lowercased == "all" || lowercased == "external" || lowercased == "externals" || UInt32(selector) != nil {
+        if lowercased == "all"
+            || lowercased == "external"
+            || lowercased == "externals"
+            || lowercased == "cursor"
+            || lowercased == "mouse"
+            || lowercased == "pointer"
+            || UInt32(selector) != nil
+        {
             return selector
         }
 
@@ -834,6 +841,8 @@ struct GlowKeyCLI {
             print("External-display shortcuts started.")
             print("Down: \(request.downShortcut)")
             print("Up: \(request.upShortcut)")
+            print("Target: \(selector == "cursor" ? "external display under cursor" : selector)")
+            print("Fallback shortcuts also work: cmd+opt+- and cmd+opt+=")
             print("Mac brightness keys remain native and continue controlling the built-in display.")
 
         case "stop":
@@ -1118,12 +1127,12 @@ struct GlowKeyCLI {
     }
 
     private static func parseHotkeyStartRequest(_ arguments: [String]) -> HotkeyStartRequest {
-        let downShortcut = value(after: "--down", in: arguments) ?? "cmd+opt+-"
-        let upShortcut = value(after: "--up", in: arguments) ?? "cmd+opt+plus"
+        let downShortcut = value(after: "--down", in: arguments) ?? "fn+f1"
+        let upShortcut = value(after: "--up", in: arguments) ?? "fn+f2"
         let explicitTarget = value(after: "--target", in: arguments)
         let positional = stripFlagValues(["--down", "--up", "--target"], from: arguments)
         let step = Int(positional.first ?? "5") ?? 5
-        let selector = explicitTarget ?? positional.dropFirst().first ?? "external"
+        let selector = explicitTarget ?? positional.dropFirst().first ?? "cursor"
         return HotkeyStartRequest(
             step: step,
             selector: selector,

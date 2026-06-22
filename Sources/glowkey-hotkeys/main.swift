@@ -2,23 +2,31 @@ import ApplicationServices
 import CoreGraphics
 import Foundation
 
-private let defaultDownShortcut = "cmd+opt+-"
-private let defaultUpShortcut = "cmd+opt+="
+private let defaultDownShortcut = "fn+f1"
+private let defaultUpShortcut = "fn+f2"
+private let fallbackDownShortcut = "cmd+opt+-"
+private let fallbackUpShortcut = "cmd+opt+="
 
 final class HotkeyAgent {
     private let glowkeyPath: String
     private let step: Int
     private let selector: String
-    private let downShortcut: KeyboardShortcut
-    private let upShortcut: KeyboardShortcut
+    private let downShortcuts: [KeyboardShortcut]
+    private let upShortcuts: [KeyboardShortcut]
     private let debug: Bool
 
     init(arguments: [String]) {
         self.glowkeyPath = Self.value(after: "--glowkey", in: arguments) ?? "glowkey"
         self.step = max(1, Int(Self.value(after: "--step", in: arguments) ?? "5") ?? 5)
-        self.selector = Self.value(after: "--selector", in: arguments) ?? "external"
-        self.downShortcut = KeyboardShortcut(Self.value(after: "--down", in: arguments) ?? defaultDownShortcut)
-        self.upShortcut = KeyboardShortcut(Self.value(after: "--up", in: arguments) ?? defaultUpShortcut)
+        self.selector = Self.value(after: "--selector", in: arguments) ?? "cursor"
+        self.downShortcuts = [
+            KeyboardShortcut(Self.value(after: "--down", in: arguments) ?? defaultDownShortcut),
+            KeyboardShortcut(fallbackDownShortcut)
+        ].deduplicated()
+        self.upShortcuts = [
+            KeyboardShortcut(Self.value(after: "--up", in: arguments) ?? defaultUpShortcut),
+            KeyboardShortcut(fallbackUpShortcut)
+        ].deduplicated()
         self.debug = arguments.contains("--debug")
     }
 
@@ -29,8 +37,8 @@ final class HotkeyAgent {
         if debug {
             print("GlowKey hotkey helper")
             print("Accessibility trusted: \(trusted)")
-            print("Down: \(downShortcut.description)")
-            print("Up: \(upShortcut.description)")
+            print("Down: \(downShortcuts.map(\.description).joined(separator: ", "))")
+            print("Up: \(upShortcuts.map(\.description).joined(separator: ", "))")
             print("Target: \(selector)")
             print("Step: \(step)%")
             print("Listening. Press Control-C to stop.")
@@ -59,18 +67,38 @@ final class HotkeyAgent {
         let keyCode = UInt32(event.getIntegerValueField(.keyboardEventKeycode))
         let flags = event.flags
 
-        if downShortcut.matches(keyCode: keyCode, flags: flags) {
+        if let shortcut = downShortcuts.first(where: { $0.matches(keyCode: keyCode, flags: flags) }) {
             if debug {
-                print("Matched down: \(downShortcut.description)")
+                print("Matched down: \(shortcut.description)")
             }
-            runGlowKey(arguments: ["down", selector, String(step)])
-        } else if upShortcut.matches(keyCode: keyCode, flags: flags) {
+            runGlowKey(direction: "down")
+        } else if let shortcut = upShortcuts.first(where: { $0.matches(keyCode: keyCode, flags: flags) }) {
             if debug {
-                print("Matched up: \(upShortcut.description)")
+                print("Matched up: \(shortcut.description)")
             }
-            runGlowKey(arguments: ["up", selector, String(step)])
+            runGlowKey(direction: "up")
         } else if debug, flags.intersection([.maskCommand, .maskAlternate, .maskControl]).isEmpty == false {
             print("Ignored keyCode=\(keyCode) flags=\(flags.rawValue)")
+        }
+    }
+
+    private func runGlowKey(direction: String) {
+        guard let resolvedSelector = resolvedSelector() else {
+            if debug {
+                print("No external display under cursor.")
+            }
+            return
+        }
+
+        runGlowKey(arguments: [direction, resolvedSelector, String(step)])
+    }
+
+    private func resolvedSelector() -> String? {
+        switch selector.lowercased() {
+        case "cursor", "mouse", "pointer", "active":
+            cursorExternalDisplayID().map(String.init)
+        default:
+            selector
         }
     }
 
@@ -105,7 +133,7 @@ final class HotkeyAgent {
     }
 }
 
-private struct KeyboardShortcut {
+private struct KeyboardShortcut: Equatable {
     let keyCode: UInt32
     let requiredFlags: CGEventFlags
     let description: String
@@ -131,6 +159,8 @@ private struct KeyboardShortcut {
                 flags.insert(.maskControl)
             case "shift":
                 flags.insert(.maskShift)
+            case "fn", "function":
+                flags.insert(.maskSecondaryFn)
             default:
                 keyToken = part
             }
@@ -166,6 +196,10 @@ private func eventTapCallback(
 
 private func keyboardKeyCode(for key: String) -> UInt32 {
     switch key {
+    case "f1":
+        return 122
+    case "f2":
+        return 120
     case "-", "minus":
         return 27
     case "=", "plus", "equal", "equals":
@@ -186,6 +220,37 @@ private func keyboardKeyCode(for key: String) -> UInt32 {
         return 44
     default:
         return key.count == 1 ? letterKeyCode(for: key) : 24
+    }
+}
+
+private func cursorExternalDisplayID() -> CGDirectDisplayID? {
+    guard let point = CGEvent(source: nil)?.location else {
+        return nil
+    }
+
+    var count: UInt32 = 0
+    guard CGGetOnlineDisplayList(0, nil, &count) == .success, count > 0 else {
+        return nil
+    }
+
+    var displays = Array(repeating: CGDirectDisplayID(0), count: Int(count))
+    guard CGGetOnlineDisplayList(count, &displays, &count) == .success else {
+        return nil
+    }
+
+    return displays
+        .prefix(Int(count))
+        .filter { CGDisplayIsBuiltin($0) == 0 }
+        .first { CGDisplayBounds($0).contains(point) }
+}
+
+private extension Array where Element == KeyboardShortcut {
+    func deduplicated() -> [KeyboardShortcut] {
+        reduce(into: []) { result, shortcut in
+            if !result.contains(shortcut) {
+                result.append(shortcut)
+            }
+        }
     }
 }
 

@@ -17,7 +17,8 @@ GlowKey currently includes:
 - External display control through DDC/CI when available.
 - Automatic software dimming fallback when hardware control is blocked.
 - Per-display brightness state, reconnect restore, and optional external-display sync.
-- Keyboard shortcuts for external displays: `command + option + -` and `command + option + =`.
+- Cursor-based external display shortcuts: `fn + F1` and `fn + F2`.
+- Fallback external display shortcuts: `command + option + -` and `command + option + =`.
 - A reusable Swift core plus CLI.
 
 Advanced hardware details stay in debug CLI commands instead of the normal UI.
@@ -43,6 +44,13 @@ open /Applications/GlowKey.app
 ```
 
 Homebrew 6 requires `brew trust` for third-party taps. Because this build is unsigned, macOS may still require right-click > Open on first launch.
+
+Shortcuts:
+
+- `fn + F1` decreases the external display under the mouse cursor.
+- `fn + F2` increases the external display under the mouse cursor.
+- `command + option + -` and `command + option + =` remain available as fallback shortcuts.
+- Plain Mac brightness keys keep controlling the built-in display normally.
 
 From this checkout:
 

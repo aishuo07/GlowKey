@@ -310,6 +310,7 @@ final class LumenPanelView: NSView {
     private var shortcutsPanel: NSView?
     private var transientPanelTitle: String?
     private var liveApplyWorkItems: [String: DispatchWorkItem] = [:]
+    private var lastScheduledValues: [String: Int] = [:]
 
     init(
         state: RuntimeState,
@@ -610,9 +611,9 @@ final class LumenPanelView: NSView {
         showTransientPanel(
             title: "Shortcuts",
             lines: [
-                "External down: command + option + -",
-                "External up: command + option + =",
-                "Mac F1/F2: unchanged"
+                "Cursor display: fn + F1 / fn + F2",
+                "Fallback: command + option + - / =",
+                "Mac F1/F2 stays native"
             ]
         )
     }
@@ -672,12 +673,16 @@ final class LumenPanelView: NSView {
     }
 
     private func scheduleLiveApply(selector: String, value: Int) {
+        guard lastScheduledValues[selector] != value else {
+            return
+        }
+        lastScheduledValues[selector] = value
         liveApplyWorkItems[selector]?.cancel()
         let workItem = DispatchWorkItem { [weak self] in
             self?.apply(selector, value)
         }
         liveApplyWorkItems[selector] = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.18, execute: workItem)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.075, execute: workItem)
     }
 
     private func cancelPendingLiveApplies() {
@@ -685,6 +690,7 @@ final class LumenPanelView: NSView {
             workItem.cancel()
         }
         liveApplyWorkItems.removeAll()
+        lastScheduledValues.removeAll()
     }
 
     @objc private func closeTransientPanel() {
@@ -727,6 +733,8 @@ final class CardView: NSView {
 
 final class BrightnessBar: NSView {
     private var value: Int
+    private var visualValue: CGFloat
+    private var lastEmittedValue: Int
     private let controlEnabled: Bool
     private let onDragStart: () -> Void
     private let onChange: (Int) -> Void
@@ -734,6 +742,7 @@ final class BrightnessBar: NSView {
     private let fill: NSColor
     private let track = NSColor(calibratedRed: 0.24, green: 0.21, blue: 0.19, alpha: 1)
     private let knob = NSColor(calibratedRed: 1.0, green: 0.78, blue: 0.55, alpha: 1)
+    private var isTracking = false
 
     init(
         frame: NSRect,
@@ -744,7 +753,10 @@ final class BrightnessBar: NSView {
         onChange: @escaping (Int) -> Void,
         onCommit: @escaping (Int) -> Void
     ) {
-        self.value = min(100, max(0, value))
+        let clampedValue = min(100, max(0, value))
+        self.value = clampedValue
+        self.visualValue = CGFloat(clampedValue)
+        self.lastEmittedValue = clampedValue
         self.controlEnabled = isEnabled
         self.fill = fillColor
         self.onDragStart = onDragStart
@@ -752,6 +764,7 @@ final class BrightnessBar: NSView {
         self.onCommit = onCommit
         super.init(frame: frame)
         wantsLayer = true
+        layerContentsRedrawPolicy = .onSetNeedsDisplay
         toolTip = "Drag to change brightness"
     }
 
@@ -774,15 +787,27 @@ final class BrightnessBar: NSView {
         track.withAlphaComponent(alpha).setFill()
         NSBezierPath(roundedRect: bar, xRadius: bar.height / 2, yRadius: bar.height / 2).fill()
 
-        let fillWidth = bar.width * CGFloat(value) / 100
+        let fillWidth = bar.width * visualValue / 100
         let fillRect = NSRect(x: bar.minX, y: bar.minY, width: fillWidth, height: bar.height)
-        fill.withAlphaComponent(alpha).setFill()
-        NSBezierPath(roundedRect: fillRect, xRadius: bar.height / 2, yRadius: bar.height / 2).fill()
+        if fillRect.width > 0 {
+            NSGradient(colors: [
+                fill.withAlphaComponent(alpha * 0.86),
+                knob.withAlphaComponent(alpha)
+            ])?.draw(
+                in: NSBezierPath(roundedRect: fillRect, xRadius: bar.height / 2, yRadius: bar.height / 2),
+                angle: 0
+            )
+        }
 
         let knobX = bar.minX + fillWidth
-        let knobRect = NSRect(x: knobX - 13, y: bar.midY - 13, width: 26, height: 26)
+        let knobSize: CGFloat = isTracking ? 29 : 26
+        let knobRect = NSRect(x: knobX - knobSize / 2, y: bar.midY - knobSize / 2, width: knobSize, height: knobSize)
+        NSColor.black.withAlphaComponent(0.24).setFill()
+        NSBezierPath(ovalIn: knobRect.offsetBy(dx: 0, dy: -1.5)).fill()
         knob.withAlphaComponent(alpha).setFill()
         NSBezierPath(ovalIn: knobRect).fill()
+        NSColor.white.withAlphaComponent(0.20).setStroke()
+        NSBezierPath(ovalIn: knobRect.insetBy(dx: 0.5, dy: 0.5)).stroke()
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -790,6 +815,8 @@ final class BrightnessBar: NSView {
             return
         }
 
+        isTracking = true
+        needsDisplay = true
         onDragStart()
         updateValue(from: event)
         var keepTracking = true
@@ -804,6 +831,8 @@ final class BrightnessBar: NSView {
                 break
             }
         }
+        isTracking = false
+        needsDisplay = true
         onCommit(value)
     }
 
@@ -811,13 +840,17 @@ final class BrightnessBar: NSView {
         let point = convert(event.locationInWindow, from: nil)
         let bar = trackRect
         let ratio = min(1, max(0, (point.x - bar.minX) / bar.width))
-        value = Int((ratio * 100).rounded())
-        onChange(value)
+        visualValue = ratio * 100
+        value = Int(visualValue.rounded())
+        if value != lastEmittedValue {
+            lastEmittedValue = value
+            onChange(value)
+        }
         needsDisplay = true
     }
 
     private var trackRect: NSRect {
-        NSRect(x: 8, y: bounds.midY - 6, width: bounds.width - 16, height: 12)
+        NSRect(x: 8, y: bounds.midY - 5, width: bounds.width - 16, height: 10)
     }
 }
 
