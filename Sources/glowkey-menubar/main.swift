@@ -406,7 +406,6 @@ final class LumenPanelView: NSView {
         self.quit = quit
         super.init(frame: NSRect(x: 0, y: 0, width: 400, height: Self.height(for: displays, shortcutsEnabled: shortcutsEnabled)))
         wantsLayer = true
-        layer?.backgroundColor = NSColor(calibratedRed: 0.075, green: 0.078, blue: 0.084, alpha: 1).cgColor
         build(displays: displays)
         if CommandLine.arguments.contains("--open-shortcuts") {
             DispatchQueue.main.async { [weak self] in
@@ -432,6 +431,8 @@ final class LumenPanelView: NSView {
     }
 
     private func build(displays: [Display]) {
+        addSubview(GlassBackdrop(frame: bounds), positioned: .below, relativeTo: nil)
+
         let x: CGFloat = 18
         var y = bounds.height - 56
 
@@ -507,6 +508,7 @@ final class LumenPanelView: NSView {
         let value = brightness(for: display)
         let card = CardView(frame: NSRect(x: 0, y: 0, width: 364, height: 80))
         card.accentColor = display.isBuiltin ? softGray : peach
+        card.secondaryAccentColor = display.isBuiltin ? glassBlue : glassPink
         card.isActive = selectorMatches(display)
         card.isDimmed = value <= 25
 
@@ -606,6 +608,7 @@ final class LumenPanelView: NSView {
     private func emptyCard() -> NSView {
         let card = CardView(frame: NSRect(x: 0, y: 0, width: 364, height: 80))
         card.accentColor = mutedText
+        card.secondaryAccentColor = glassBlue
         let title = NSTextField(labelWithString: "No Displays")
         title.font = .systemFont(ofSize: 21, weight: .black)
         title.textColor = mainText
@@ -620,10 +623,10 @@ final class LumenPanelView: NSView {
     }
 
     private func permissionPanel() -> NSView {
-        let panel = NSView(frame: NSRect(x: 0, y: 0, width: 364, height: 42))
-        panel.wantsLayer = true
-        panel.layer?.cornerRadius = 14
-        panel.layer?.backgroundColor = NSColor(calibratedRed: 0.18, green: 0.13, blue: 0.09, alpha: 0.96).cgColor
+        let panel = GlassPanelView(frame: NSRect(x: 0, y: 0, width: 364, height: 42))
+        panel.cornerRadius = 14
+        panel.accentColor = peach
+        panel.secondaryAccentColor = glassPink
 
         let label = NSTextField(labelWithString: "Shortcuts need Accessibility permission")
         label.font = .systemFont(ofSize: 11, weight: .bold)
@@ -640,10 +643,10 @@ final class LumenPanelView: NSView {
     }
 
     private func footer() -> NSView {
-        let panel = NSView(frame: NSRect(x: 0, y: 0, width: 364, height: 48))
-        panel.wantsLayer = true
-        panel.layer?.cornerRadius = 15
-        panel.layer?.backgroundColor = NSColor(calibratedRed: 0.13, green: 0.10, blue: 0.09, alpha: 0.90).cgColor
+        let panel = GlassPanelView(frame: NSRect(x: 0, y: 0, width: 364, height: 48))
+        panel.cornerRadius = 16
+        panel.accentColor = peach
+        panel.secondaryAccentColor = glassBlue
 
         let sync = NSButton(title: state.syncExternalDisplays ? "Sync On" : "Sync Off", target: self, action: #selector(syncTapped))
         sync.bezelStyle = .rounded
@@ -715,12 +718,10 @@ final class LumenPanelView: NSView {
         }
         shortcutsPanel?.removeFromSuperview()
 
-        let panel = NSView(frame: NSRect(x: 18, y: 70, width: 364, height: 104))
-        panel.wantsLayer = true
-        panel.layer?.cornerRadius = 18
-        panel.layer?.borderWidth = 1
-        panel.layer?.borderColor = NSColor.white.withAlphaComponent(0.12).cgColor
-        panel.layer?.backgroundColor = NSColor(calibratedRed: 0.10, green: 0.10, blue: 0.11, alpha: 0.98).cgColor
+        let panel = GlassPanelView(frame: NSRect(x: 18, y: 70, width: 364, height: 104))
+        panel.cornerRadius = 20
+        panel.accentColor = glassBlue
+        panel.secondaryAccentColor = glassPink
 
         let titleField = NSTextField(labelWithString: title)
         titleField.font = .systemFont(ofSize: 17, weight: .black)
@@ -776,35 +777,138 @@ final class LumenPanelView: NSView {
         transientPanelTitle = nil
     }
 
-    private var mainText: NSColor { NSColor(calibratedRed: 0.93, green: 0.90, blue: 0.91, alpha: 1) }
-    private var warmText: NSColor { NSColor(calibratedRed: 0.77, green: 0.68, blue: 0.71, alpha: 1) }
-    private var mutedText: NSColor { NSColor(calibratedRed: 0.58, green: 0.53, blue: 0.57, alpha: 1) }
-    private var peach: NSColor { NSColor(calibratedRed: 1.0, green: 0.74, blue: 0.46, alpha: 1) }
-    private var softGray: NSColor { NSColor(calibratedRed: 0.68, green: 0.66, blue: 0.65, alpha: 1) }
+    private var mainText: NSColor { NSColor(calibratedRed: 0.96, green: 0.95, blue: 0.98, alpha: 1) }
+    private var warmText: NSColor { NSColor(calibratedRed: 0.82, green: 0.79, blue: 0.88, alpha: 1) }
+    private var mutedText: NSColor { NSColor(calibratedRed: 0.66, green: 0.66, blue: 0.74, alpha: 1) }
+    private var peach: NSColor { NSColor(calibratedRed: 1.0, green: 0.78, blue: 0.48, alpha: 1) }
+    private var softGray: NSColor { NSColor(calibratedRed: 0.74, green: 0.82, blue: 0.92, alpha: 1) }
+    private var glassBlue: NSColor { NSColor(calibratedRed: 0.33, green: 0.78, blue: 1.0, alpha: 1) }
+    private var glassPink: NSColor { NSColor(calibratedRed: 1.0, green: 0.42, blue: 0.72, alpha: 1) }
     private var panelFill: NSColor { NSColor.white.withAlphaComponent(0.075) }
+}
+
+final class GlassBackdrop: NSView {
+    override func draw(_ dirtyRect: NSRect) {
+        let base = NSBezierPath(roundedRect: bounds, xRadius: 28, yRadius: 28)
+        NSGradient(colors: [
+            NSColor(calibratedRed: 0.05, green: 0.07, blue: 0.11, alpha: 0.98),
+            NSColor(calibratedRed: 0.10, green: 0.08, blue: 0.16, alpha: 0.98),
+            NSColor(calibratedRed: 0.06, green: 0.06, blue: 0.09, alpha: 0.98)
+        ])?.draw(in: base, angle: 255)
+
+        drawOrb(
+            rect: NSRect(x: -72, y: bounds.height - 150, width: 210, height: 210),
+            color: NSColor(calibratedRed: 0.12, green: 0.62, blue: 1.0, alpha: 0.26)
+        )
+        drawOrb(
+            rect: NSRect(x: bounds.width - 148, y: -58, width: 230, height: 230),
+            color: NSColor(calibratedRed: 1.0, green: 0.54, blue: 0.22, alpha: 0.25)
+        )
+        drawOrb(
+            rect: NSRect(x: 118, y: bounds.height - 118, width: 210, height: 170),
+            color: NSColor(calibratedRed: 0.95, green: 0.30, blue: 0.62, alpha: 0.16)
+        )
+
+        NSColor.white.withAlphaComponent(0.09).setStroke()
+        let stroke = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 28, yRadius: 28)
+        stroke.lineWidth = 1
+        stroke.stroke()
+    }
+
+    private func drawOrb(rect: NSRect, color: NSColor) {
+        NSGradient(colors: [
+            color,
+            color.withAlphaComponent(0.02)
+        ])?.draw(in: NSBezierPath(ovalIn: rect), relativeCenterPosition: NSPoint(x: -0.18, y: 0.22))
+    }
+}
+
+class GlassPanelView: NSView {
+    var accentColor: NSColor = .systemOrange
+    var secondaryAccentColor: NSColor = .systemBlue
+    var cornerRadius: CGFloat = 18
+
+    override var isFlipped: Bool {
+        false
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let rect = bounds.insetBy(dx: 0.5, dy: 0.5)
+        let path = NSBezierPath(roundedRect: rect, xRadius: cornerRadius, yRadius: cornerRadius)
+
+        NSGradient(colors: [
+            NSColor.white.withAlphaComponent(0.17),
+            accentColor.withAlphaComponent(0.08),
+            NSColor.black.withAlphaComponent(0.20)
+        ])?.draw(in: path, angle: 255)
+
+        NSColor.black.withAlphaComponent(0.16).setFill()
+        NSBezierPath(roundedRect: rect.offsetBy(dx: 0, dy: -1), xRadius: cornerRadius, yRadius: cornerRadius).fill()
+
+        NSGradient(colors: [
+            NSColor.white.withAlphaComponent(0.30),
+            secondaryAccentColor.withAlphaComponent(0.16),
+            NSColor.white.withAlphaComponent(0.07)
+        ])?.draw(in: path, angle: 25)
+
+        NSColor.white.withAlphaComponent(0.20).setStroke()
+        path.lineWidth = 1
+        path.stroke()
+
+        accentColor.withAlphaComponent(0.26).setStroke()
+        let glow = NSBezierPath(roundedRect: rect.insetBy(dx: 1.5, dy: 1.5), xRadius: max(0, cornerRadius - 2), yRadius: max(0, cornerRadius - 2))
+        glow.lineWidth = 1
+        glow.stroke()
+    }
 }
 
 final class CardView: NSView {
     var accentColor: NSColor = .systemOrange
+    var secondaryAccentColor: NSColor = .systemBlue
     var isActive = false
     var isDimmed = false
 
     override func draw(_ dirtyRect: NSRect) {
-        let fillAlpha: CGFloat = isDimmed ? 0.90 : 0.96
-        NSColor(calibratedRed: 0.12, green: 0.12, blue: 0.13, alpha: fillAlpha).setFill()
-        NSBezierPath(roundedRect: bounds, xRadius: 22, yRadius: 22).fill()
+        let rect = bounds.insetBy(dx: 0.5, dy: 0.5)
+        let radius: CGFloat = 24
+        let path = NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius)
+
+        NSColor.black.withAlphaComponent(0.22).setFill()
+        NSBezierPath(roundedRect: rect.offsetBy(dx: 0, dy: -2), xRadius: radius, yRadius: radius).fill()
+
+        NSGradient(colors: [
+            NSColor.white.withAlphaComponent(isDimmed ? 0.08 : 0.15),
+            accentColor.withAlphaComponent(isActive ? 0.18 : 0.08),
+            NSColor(calibratedRed: 0.07, green: 0.08, blue: 0.12, alpha: 0.70)
+        ])?.draw(in: path, angle: 250)
+
+        NSGradient(colors: [
+            accentColor.withAlphaComponent(isActive ? 0.30 : 0.16),
+            secondaryAccentColor.withAlphaComponent(0.10),
+            NSColor.clear
+        ])?.draw(in: path, angle: 15)
 
         if isActive {
-            accentColor.withAlphaComponent(0.36).setStroke()
+            accentColor.withAlphaComponent(0.55).setStroke()
         } else {
-            NSColor.white.withAlphaComponent(0.06).setStroke()
+            NSColor.white.withAlphaComponent(0.15).setStroke()
         }
-        let stroke = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 22, yRadius: 22)
+        let stroke = NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius)
         stroke.lineWidth = isActive ? 2 : 1
         stroke.stroke()
 
-        accentColor.setFill()
-        NSBezierPath(roundedRect: NSRect(x: 0, y: 0, width: 5, height: bounds.height), xRadius: 2.5, yRadius: 2.5).fill()
+        let highlight = NSBezierPath(roundedRect: rect.insetBy(dx: 1.5, dy: 1.5), xRadius: radius - 2, yRadius: radius - 2)
+        NSColor.white.withAlphaComponent(0.10).setStroke()
+        highlight.lineWidth = 1
+        highlight.stroke()
+
+        NSGradient(colors: [
+            accentColor.withAlphaComponent(0.95),
+            secondaryAccentColor.withAlphaComponent(0.72)
+        ])?.draw(
+            in: NSBezierPath(roundedRect: NSRect(x: 0, y: 9, width: 5, height: bounds.height - 18), xRadius: 2.5, yRadius: 2.5),
+            angle: 90
+        )
     }
 }
 
@@ -817,8 +921,8 @@ final class BrightnessBar: NSView {
     private let onChange: (Int) -> Void
     private let onCommit: (Int) -> Void
     private let fill: NSColor
-    private let track = NSColor(calibratedRed: 0.24, green: 0.21, blue: 0.19, alpha: 1)
-    private let knob = NSColor(calibratedRed: 1.0, green: 0.78, blue: 0.55, alpha: 1)
+    private let track = NSColor.white.withAlphaComponent(0.15)
+    private let knob = NSColor(calibratedRed: 0.98, green: 0.98, blue: 1.0, alpha: 1)
     private var isTracking = false
 
     init(
@@ -861,6 +965,8 @@ final class BrightnessBar: NSView {
         let alpha: CGFloat = controlEnabled ? 1 : 0.42
         let bar = trackRect
 
+        NSColor.black.withAlphaComponent(0.20 * alpha).setFill()
+        NSBezierPath(roundedRect: bar.offsetBy(dx: 0, dy: -1), xRadius: bar.height / 2, yRadius: bar.height / 2).fill()
         track.withAlphaComponent(alpha).setFill()
         NSBezierPath(roundedRect: bar, xRadius: bar.height / 2, yRadius: bar.height / 2).fill()
 
@@ -868,8 +974,9 @@ final class BrightnessBar: NSView {
         let fillRect = NSRect(x: bar.minX, y: bar.minY, width: fillWidth, height: bar.height)
         if fillRect.width > 0 {
             NSGradient(colors: [
-                fill.withAlphaComponent(alpha * 0.86),
-                knob.withAlphaComponent(alpha)
+                fill.withAlphaComponent(alpha * 0.92),
+                NSColor(calibratedRed: 0.62, green: 0.86, blue: 1.0, alpha: alpha * 0.92),
+                NSColor.white.withAlphaComponent(alpha * 0.82)
             ])?.draw(
                 in: NSBezierPath(roundedRect: fillRect, xRadius: bar.height / 2, yRadius: bar.height / 2),
                 angle: 0
@@ -879,12 +986,17 @@ final class BrightnessBar: NSView {
         let knobX = bar.minX + fillWidth
         let knobSize: CGFloat = isTracking ? 29 : 26
         let knobRect = NSRect(x: knobX - knobSize / 2, y: bar.midY - knobSize / 2, width: knobSize, height: knobSize)
-        NSColor.black.withAlphaComponent(0.24).setFill()
-        NSBezierPath(ovalIn: knobRect.offsetBy(dx: 0, dy: -1.5)).fill()
-        knob.withAlphaComponent(alpha).setFill()
-        NSBezierPath(ovalIn: knobRect).fill()
-        NSColor.white.withAlphaComponent(0.20).setStroke()
-        NSBezierPath(ovalIn: knobRect.insetBy(dx: 0.5, dy: 0.5)).stroke()
+        NSColor.black.withAlphaComponent(0.32).setFill()
+        NSBezierPath(ovalIn: knobRect.offsetBy(dx: 0, dy: -2)).fill()
+        NSGradient(colors: [
+            NSColor.white.withAlphaComponent(alpha),
+            knob.withAlphaComponent(alpha * 0.90),
+            fill.withAlphaComponent(alpha * 0.56)
+        ])?.draw(in: NSBezierPath(ovalIn: knobRect), angle: 245)
+        NSColor.white.withAlphaComponent(0.62).setStroke()
+        let knobStroke = NSBezierPath(ovalIn: knobRect.insetBy(dx: 0.5, dy: 0.5))
+        knobStroke.lineWidth = 1
+        knobStroke.stroke()
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -927,7 +1039,7 @@ final class BrightnessBar: NSView {
     }
 
     private var trackRect: NSRect {
-        NSRect(x: 8, y: bounds.midY - 5, width: bounds.width - 16, height: 10)
+        NSRect(x: 8, y: bounds.midY - 6, width: bounds.width - 16, height: 12)
     }
 }
 
