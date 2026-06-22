@@ -120,6 +120,7 @@ final class MenuBarApp: NSObject, NSApplicationDelegate {
 final class LumenPanelController: NSViewController {
     private let controller = GlowKeyController()
     private let stateStore = RuntimeStateStore()
+    private let applyCoordinator = MenuApplyCoordinator()
     private var currentState = RuntimeState.defaultValue
     private var refreshTimer: Timer?
     private var lastStateModifiedAt: Date?
@@ -137,7 +138,10 @@ final class LumenPanelController: NSViewController {
             displays: displays,
             shortcutsEnabled: shortcutsEnabled,
             apply: { [weak self] selector, value in
-                self?.apply(selector: selector, brightness: value)
+                self?.applyLive(selector: selector, brightness: value)
+            },
+            commit: { [weak self] selector, value, completion in
+                self?.commit(selector: selector, brightness: value, completion: completion)
             },
             toggleSync: { [weak self] in
                 self?.toggleSync()
@@ -156,15 +160,32 @@ final class LumenPanelController: NSViewController {
         startAutoRefresh()
     }
 
-    private func apply(selector: String, brightness: Int) {
+    private func applyLive(selector: String, brightness: Int) {
         guard let candidate = glowkeyExecutableURL() else {
             log("Unable to find glowkey CLI for selector \(selector)")
             return
         }
 
-        let arguments = ["set", selector, String(Brightness(brightness).percentage)]
-        DispatchQueue.global(qos: .userInitiated).async {
-            runProcess(candidate, arguments: arguments)
+        applyCoordinator.submitLive(
+            executableURL: candidate,
+            selector: selector,
+            brightness: brightness
+        )
+    }
+
+    private func commit(selector: String, brightness: Int, completion: @escaping () -> Void) {
+        guard let candidate = glowkeyExecutableURL() else {
+            log("Unable to find glowkey CLI for selector \(selector)")
+            completion()
+            return
+        }
+
+        applyCoordinator.submitCommit(
+            executableURL: candidate,
+            selector: selector,
+            brightness: brightness
+        ) {
+            completion()
         }
     }
 
@@ -298,9 +319,61 @@ private func runProcess(_ executableURL: URL, arguments: [String]) {
     process.waitUntilExit()
 }
 
+private final class MenuApplyCoordinator: @unchecked Sendable {
+    private let queue = DispatchQueue(label: "fyi.glowkey.menubar.apply", qos: .userInitiated)
+    private let lock = NSLock()
+    private var revisions: [String: Int] = [:]
+
+    func submitLive(executableURL: URL, selector: String, brightness: Int) {
+        let revision = nextRevision(for: selector)
+        queue.async { [weak self] in
+            guard self?.shouldRunLive(selector: selector, revision: revision) == true else {
+                return
+            }
+            runProcess(
+                executableURL,
+                arguments: ["set", selector, String(Brightness(brightness).percentage)]
+            )
+        }
+    }
+
+    func submitCommit(
+        executableURL: URL,
+        selector: String,
+        brightness: Int,
+        completion: @escaping @MainActor () -> Void
+    ) {
+        _ = nextRevision(for: selector)
+        queue.async {
+            runProcess(
+                executableURL,
+                arguments: ["set", selector, String(Brightness(brightness).percentage)]
+            )
+            DispatchQueue.main.async {
+                completion()
+            }
+        }
+    }
+
+    private func nextRevision(for selector: String) -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        let revision = (revisions[selector] ?? 0) + 1
+        revisions[selector] = revision
+        return revision
+    }
+
+    private func shouldRunLive(selector: String, revision: Int) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return revisions[selector] == revision
+    }
+}
+
 @MainActor
 final class LumenPanelView: NSView {
     private let apply: (String, Int) -> Void
+    private let commit: (String, Int, @escaping () -> Void) -> Void
     private let toggleSync: () -> Void
     private let draggingChanged: (Bool) -> Void
     private let refresh: () -> Void
@@ -317,6 +390,7 @@ final class LumenPanelView: NSView {
         displays: [Display],
         shortcutsEnabled: Bool,
         apply: @escaping (String, Int) -> Void,
+        commit: @escaping (String, Int, @escaping () -> Void) -> Void,
         toggleSync: @escaping () -> Void,
         draggingChanged: @escaping (Bool) -> Void,
         refresh: @escaping () -> Void,
@@ -325,6 +399,7 @@ final class LumenPanelView: NSView {
         self.state = state
         self.shortcutsEnabled = shortcutsEnabled
         self.apply = apply
+        self.commit = commit
         self.toggleSync = toggleSync
         self.draggingChanged = draggingChanged
         self.refresh = refresh
@@ -473,8 +548,10 @@ final class LumenPanelView: NSView {
                 let selector = self?.selector(for: display) ?? String(display.id)
                 self?.liveApplyWorkItems[selector]?.cancel()
                 self?.liveApplyWorkItems[selector] = nil
-                self?.apply(selector, value)
-                self?.draggingChanged(false)
+                self?.commit(selector, value) { [weak self] in
+                    self?.draggingChanged(false)
+                    self?.refresh()
+                }
             }
         )
         card.addSubview(bar)
