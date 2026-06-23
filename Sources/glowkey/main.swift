@@ -37,11 +37,11 @@ struct GlowKeyCLI {
             let shadeStatus = shadeProcessManager.status()
             let hotkeyStatus = hotkeyProcessManager.status()
             if json {
-                printRuntimeStatusJSON(state, displays: displays, shadeStatus: shadeStatus, hotkeyStatus: hotkeyStatus)
+                printRuntimeStatusJSON(state, displays: displays, shadeStatus: shadeStatus, hotkeyStatus: hotkeyStatus, controller: controller)
             } else if debug {
                 printRuntimeStatusDebug(state, shadeStatus: shadeStatus, hotkeyStatus: hotkeyStatus)
             } else {
-                printRuntimeStatus(state, displays: displays, hotkeyStatus: hotkeyStatus)
+                printRuntimeStatus(state, displays: displays, hotkeyStatus: hotkeyStatus, controller: controller)
             }
 
         case "hotkeys":
@@ -269,13 +269,14 @@ struct GlowKeyCLI {
     private static func printRuntimeStatus(
         _ state: RuntimeState,
         displays: [Display],
-        hotkeyStatus: HotkeyProcessStatus
+        hotkeyStatus: HotkeyProcessStatus,
+        controller: GlowKeyController
     ) {
         if displays.isEmpty {
             print("No displays found.")
         } else {
             for display in displays {
-                print("\(publicDisplayName(display)): \(brightness(for: display, in: state))%")
+                print("\(publicDisplayName(display)): \(brightness(for: display, in: state, controller: controller))%")
             }
         }
         print("Sync displays: \(state.syncExternalDisplays ? "on" : "off")")
@@ -325,7 +326,8 @@ struct GlowKeyCLI {
         _ state: RuntimeState,
         displays: [Display],
         shadeStatus: ShadeProcessStatus,
-        hotkeyStatus: HotkeyProcessStatus
+        hotkeyStatus: HotkeyProcessStatus,
+        controller: GlowKeyController
     ) {
         let rows = displays.map { display in
             [
@@ -333,7 +335,7 @@ struct GlowKeyCLI {
                 "uuid": display.uuid,
                 "name": publicDisplayName(display),
                 "type": display.kindDescription,
-                "brightness": String(brightness(for: display, in: state)),
+                "brightness": String(brightness(for: display, in: state, controller: controller)),
                 "target": state.selector,
                 "mode": state.method.rawValue,
                 "syncDisplays": String(state.syncExternalDisplays),
@@ -373,6 +375,20 @@ struct GlowKeyCLI {
     }
 
     private static func brightness(for display: Display, in state: RuntimeState) -> Int {
+        storedBrightness(for: display, in: state)
+    }
+
+    private static func brightness(for display: Display, in state: RuntimeState, controller: GlowKeyController) -> Int {
+        if (display.isBuiltin || !state.overlayEnabled),
+           let liveBrightness = controller.currentBrightness(for: display)
+        {
+            return liveBrightness
+        }
+
+        return storedBrightness(for: display, in: state)
+    }
+
+    private static func storedBrightness(for display: Display, in state: RuntimeState) -> Int {
         if let value = state.displayBrightness[String(display.id)] ?? state.displayBrightness[display.uuid] {
             return value
         }
@@ -897,7 +913,11 @@ struct GlowKeyCLI {
 
         switch command {
         case "start":
-            try manager.start()
+            let shouldOpen = arguments.contains("--open")
+            if shouldOpen {
+                manager.stop()
+            }
+            try manager.start(open: shouldOpen)
             print("Menu bar started.")
         case "stop":
             manager.stop()

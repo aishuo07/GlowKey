@@ -85,28 +85,10 @@ struct ShadeProcessManager {
     }
 
     private func helperExecutableURL() throws -> URL {
-        let currentExecutable = URL(fileURLWithPath: CommandLine.arguments[0])
-        let currentDirectory = currentExecutable.deletingLastPathComponent()
-        let workingDirectory = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-        let candidates = [
-            userApplicationExecutable("glowkey-shade"),
-            currentDirectory.appendingPathComponent("glowkey-shade"),
-            workingDirectory.appendingPathComponent(".build/debug/glowkey-shade"),
-            workingDirectory.appendingPathComponent(".build/release/glowkey-shade")
-        ].compactMap(\.self)
-
-        for candidate in candidates where FileManager.default.isExecutableFile(atPath: candidate.path) {
-            return candidate
-        }
-
-        throw CLIError.invalidUsage("Shade helper is missing. Run `swift build`, then try again.")
-    }
-
-    private func userApplicationExecutable(_ name: String) -> URL? {
-        FileManager.default.urls(for: .applicationDirectory, in: .userDomainMask).first?
-            .appendingPathComponent("GlowKey.app", isDirectory: true)
-            .appendingPathComponent("Contents/MacOS", isDirectory: true)
-            .appendingPathComponent(name)
+        try ExecutableResolver.firstExecutable(
+            named: "glowkey-shade",
+            missingMessage: "Shade helper is missing. Run `swift build`, then try again."
+        )
     }
 
     private func knownPID() -> pid_t? {

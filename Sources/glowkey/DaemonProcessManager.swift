@@ -118,28 +118,10 @@ struct DaemonProcessManager {
     }
 
     private func daemonExecutableURL() throws -> URL {
-        let currentExecutable = URL(fileURLWithPath: CommandLine.arguments[0])
-        let currentDirectory = currentExecutable.deletingLastPathComponent()
-        let workingDirectory = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-        let candidates = [
-            userApplicationExecutable("glowkey-daemon"),
-            currentDirectory.appendingPathComponent("glowkey-daemon"),
-            workingDirectory.appendingPathComponent(".build/debug/glowkey-daemon"),
-            workingDirectory.appendingPathComponent(".build/release/glowkey-daemon")
-        ].compactMap(\.self)
-
-        for candidate in candidates where FileManager.default.isExecutableFile(atPath: candidate.path) {
-            return candidate
-        }
-
-        throw CLIError.invalidUsage("Daemon helper is missing. Run `swift build`, then try again.")
-    }
-
-    private func userApplicationExecutable(_ name: String) -> URL? {
-        FileManager.default.urls(for: .applicationDirectory, in: .userDomainMask).first?
-            .appendingPathComponent("GlowKey.app", isDirectory: true)
-            .appendingPathComponent("Contents/MacOS", isDirectory: true)
-            .appendingPathComponent(name)
+        try ExecutableResolver.firstExecutable(
+            named: "glowkey-daemon",
+            missingMessage: "Daemon helper is missing. Run `swift build`, then try again."
+        )
     }
 
     private func launchAgentURL(label: String) throws -> URL {

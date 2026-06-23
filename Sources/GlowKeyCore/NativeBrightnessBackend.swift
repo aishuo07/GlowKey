@@ -72,6 +72,32 @@ public struct NativeBrightnessBackend: BrightnessBackend {
 
     public func reset(_ display: Display) throws {}
 
+    public func currentBrightness(for display: Display) -> Int? {
+        if let brightness = DisplayServicesBrightnessBackend.shared.currentBrightness(for: display) {
+            return brightness
+        }
+
+        for service in copyCandidateServices(for: display) {
+            defer { IOObjectRelease(service) }
+
+            for parameter in Self.parameterPriority {
+                var value: Float = 0
+                let result = IODisplayGetFloatParameter(
+                    service,
+                    IOOptionBits(0),
+                    parameter as CFString,
+                    &value
+                )
+
+                if result == kIOReturnSuccess {
+                    return min(100, max(0, Int((value * 100).rounded())))
+                }
+            }
+        }
+
+        return nil
+    }
+
     private func copyCandidateServices(for display: Display) -> [io_service_t] {
         var services: [io_service_t] = []
 
@@ -163,5 +189,18 @@ private final class DisplayServicesBrightnessBackend: @unchecked Sendable {
 
         let value = Float(brightness.percentage) / 100
         return setBrightnessFunction(display.id, value) == 0
+    }
+
+    func currentBrightness(for display: Display) -> Int? {
+        guard display.isBuiltin, let getBrightness else {
+            return nil
+        }
+
+        var value: Float = 0
+        guard getBrightness(display.id, &value) == 0 else {
+            return nil
+        }
+
+        return min(100, max(0, Int((value * 100).rounded())))
     }
 }

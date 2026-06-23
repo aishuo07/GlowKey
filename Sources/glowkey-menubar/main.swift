@@ -1,74 +1,31 @@
 import AppKit
+import CoreGraphics
 import Darwin
 import Foundation
 import GlowKeyCore
+import SwiftUI
 
-enum LumenIcon {
-    static func menuBarImage() -> NSImage {
-        let image = draw(size: NSSize(width: 18, height: 18), menuBar: true)
-        image.isTemplate = false
-        return image
-    }
+@main
+struct GlowKeyMenuBarApp: App {
+    @NSApplicationDelegateAdaptor(GlowKeyMenuBarDelegate.self) private var appDelegate
+    @StateObject private var model = GlowKeyMenuModel()
 
-    static func panelImage() -> NSImage {
-        draw(size: NSSize(width: 30, height: 30), menuBar: false)
-    }
-
-    private static func draw(size: NSSize, menuBar: Bool) -> NSImage {
-        let image = NSImage(size: size)
-        image.lockFocus()
-
-        let bounds = NSRect(origin: .zero, size: size)
-        let center = NSPoint(x: bounds.midX, y: bounds.midY)
-        let radius = min(size.width, size.height) * 0.22
-        let rayInner = min(size.width, size.height) * 0.34
-        let rayOuter = min(size.width, size.height) * 0.47
-        let color = menuBar
-            ? NSColor(calibratedRed: 1.0, green: 0.77, blue: 0.40, alpha: 1)
-            : NSColor(calibratedRed: 1.0, green: 0.70, blue: 0.32, alpha: 1)
-
-        color.setFill()
-        NSBezierPath(ovalIn: NSRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2)).fill()
-
-        color.setStroke()
-        for index in 0..<8 {
-            let angle = CGFloat(index) * .pi / 4
-            let start = NSPoint(x: center.x + cos(angle) * rayInner, y: center.y + sin(angle) * rayInner)
-            let end = NSPoint(x: center.x + cos(angle) * rayOuter, y: center.y + sin(angle) * rayOuter)
-            let path = NSBezierPath()
-            path.lineWidth = max(1.4, size.width * 0.07)
-            path.lineCapStyle = .round
-            path.move(to: start)
-            path.line(to: end)
-            path.stroke()
+    var body: some Scene {
+        MenuBarExtra {
+            GlowKeyMenuView(model: model)
+        } label: {
+            Image(systemName: "sun.max.fill")
+                .symbolRenderingMode(.hierarchical)
         }
-
-        image.unlockFocus()
-        return image
+        .menuBarExtraStyle(.window)
     }
 }
 
 @MainActor
-final class MenuBarApp: NSObject, NSApplicationDelegate {
-    private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-    private let popover = NSPopover()
-
+final class GlowKeyMenuBarDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
-        statusItem.button?.image = LumenIcon.menuBarImage()
-        statusItem.button?.target = self
-        statusItem.button?.action = #selector(togglePopover)
         bootstrapBackgroundServices()
-
-        popover.behavior = .transient
-        popover.contentSize = NSSize(width: 400, height: 520)
-        popover.contentViewController = LumenPanelController()
-
-        if CommandLine.arguments.contains("--open") {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
-                self?.togglePopover()
-            }
-        }
     }
 
     private func bootstrapBackgroundServices() {
@@ -101,107 +58,133 @@ final class MenuBarApp: NSObject, NSApplicationDelegate {
 
         return nil
     }
-
-    @objc private func togglePopover() {
-        guard let button = statusItem.button else {
-            return
-        }
-
-        if popover.isShown {
-            popover.performClose(nil)
-        } else {
-            popover.contentViewController = LumenPanelController()
-            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-        }
-    }
 }
 
 @MainActor
-final class LumenPanelController: NSViewController {
+final class GlowKeyMenuModel: ObservableObject {
+    @Published private(set) var state = RuntimeState.defaultValue
+    @Published private(set) var displays: [Display] = []
+    @Published private(set) var displayBrightness: [CGDirectDisplayID: Int] = [:]
+    @Published private(set) var shortcutsEnabled = false
+    @Published var shortcutsExpanded = false
+
     private let controller = GlowKeyController()
     private let stateStore = RuntimeStateStore()
     private let applyCoordinator = MenuApplyCoordinator()
-    private var currentState = RuntimeState.defaultValue
     private var refreshTimer: Timer?
+    private var isDragging = false
     private var lastStateModifiedAt: Date?
     private var lastDisplaySignature = ""
-    private var isDragging = false
+    private var lastBrightnessSignature = ""
 
-    override func loadView() {
-        currentState = (try? stateStore.load()) ?? .defaultValue
-        let displays = (try? controller.displays()) ?? []
-        let shortcutsEnabled = shortcutsAreRunning()
-        lastStateModifiedAt = stateModifiedAt()
-        lastDisplaySignature = displaySignature(displays)
-        view = LumenPanelView(
-            state: currentState,
-            displays: displays,
-            shortcutsEnabled: shortcutsEnabled,
-            apply: { [weak self] selector, value in
-                self?.applyLive(selector: selector, brightness: value)
-            },
-            commit: { [weak self] selector, value, completion in
-                self?.commit(selector: selector, brightness: value, completion: completion)
-            },
-            toggleSync: { [weak self] in
-                self?.toggleSync()
-            },
-            draggingChanged: { [weak self] isDragging in
-                self?.isDragging = isDragging
-            },
-            refresh: { [weak self] in
-                self?.reload()
-            },
-            quit: {
-                NSApp.terminate(nil)
-            }
-        )
-        preferredContentSize = view.frame.size
+    init() {
+        refresh()
         startAutoRefresh()
     }
 
-    private func applyLive(selector: String, brightness: Int) {
+    func refresh() {
+        let nextState = (try? stateStore.load()) ?? .defaultValue
+        let nextDisplays = (try? controller.displays()) ?? []
+        let nextBrightness = currentBrightnessValues(for: nextDisplays, state: nextState)
+
+        state = nextState
+        displays = nextDisplays
+        displayBrightness = nextBrightness
+        shortcutsEnabled = shortcutsAreRunning()
+        lastStateModifiedAt = stateModifiedAt()
+        lastDisplaySignature = displaySignature(nextDisplays)
+        lastBrightnessSignature = brightnessSignature(nextBrightness)
+    }
+
+    func brightness(for display: Display) -> Int {
+        if let value = displayBrightness[display.id] {
+            return value
+        }
+
+        if let value = state.displayBrightness[String(display.id)] ?? state.displayBrightness[display.uuid] {
+            return value
+        }
+
+        if display.isBuiltin {
+            return state.displayBrightness["all"] ?? (selectorMatches(display) ? state.brightness : 100)
+        }
+
+        if let groupedValue = state.displayBrightness["external"] ?? state.displayBrightness["all"] {
+            return groupedValue
+        }
+
+        return selectorMatches(display) ? state.brightness : 100
+    }
+
+    func displayTitle(_ display: Display) -> String {
+        if display.isBuiltin {
+            return "MacBook Pro"
+        }
+
+        if display.name.lowercased().hasPrefix("external display") {
+            return "External \(display.resolutionDescription)"
+        }
+
+        return display.name
+    }
+
+    func beginDragging() {
+        isDragging = true
+    }
+
+    func liveSet(_ value: Int, for display: Display) {
+        setLocalBrightness(value, for: display)
         guard let candidate = glowkeyExecutableURL() else {
-            log("Unable to find glowkey CLI for selector \(selector)")
             return
         }
 
         applyCoordinator.submitLive(
             executableURL: candidate,
-            selector: selector,
-            brightness: brightness
+            selector: selector(for: display),
+            brightness: value
         )
     }
 
-    private func commit(selector: String, brightness: Int, completion: @escaping () -> Void) {
+    func commit(_ value: Int, for display: Display) {
+        setLocalBrightness(value, for: display)
         guard let candidate = glowkeyExecutableURL() else {
-            log("Unable to find glowkey CLI for selector \(selector)")
-            completion()
+            isDragging = false
             return
         }
 
         applyCoordinator.submitCommit(
             executableURL: candidate,
-            selector: selector,
-            brightness: brightness
-        ) {
-            completion()
+            selector: selector(for: display),
+            brightness: value
+        ) { [weak self] in
+            self?.isDragging = false
+            self?.refresh()
         }
     }
 
-    private func toggleSync() {
-        guard let candidate = glowkeyExecutableURL() else {
-            log("Unable to find glowkey CLI for sync toggle")
+    func toggleSync() {
+        let enabled = !state.syncExternalDisplays
+        state = RuntimeState(
+            brightness: state.brightness,
+            selector: state.selector,
+            displayBrightness: state.displayBrightness,
+            overlayEnabled: state.overlayEnabled,
+            overlayBrightness: state.overlayBrightness,
+            method: state.method,
+            syncExternalDisplays: enabled
+        )
+        try? stateStore.save(state)
+    }
+
+    func openAccessibilitySettings() {
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") else {
             return
         }
-
-        DispatchQueue.global(qos: .userInitiated).async {
-            runProcess(candidate, arguments: ["sync", "toggle"])
-        }
+        NSWorkspace.shared.open(url)
     }
 
-    private func reload() {
-        loadView()
+    func quit() {
+        NSApp.terminate(nil)
     }
 
     private func startAutoRefresh() {
@@ -218,24 +201,86 @@ final class LumenPanelController: NSViewController {
             return
         }
 
-        let displays = (try? controller.displays()) ?? []
-        let currentStateModifiedAt = stateModifiedAt()
-        let currentDisplaySignature = displaySignature(displays)
-        guard currentStateModifiedAt != lastStateModifiedAt || currentDisplaySignature != lastDisplaySignature else {
+        let nextState = (try? stateStore.load()) ?? .defaultValue
+        let nextDisplays = (try? controller.displays()) ?? []
+        let nextBrightness = currentBrightnessValues(for: nextDisplays, state: nextState)
+        let nextStateModifiedAt = stateModifiedAt()
+        let nextDisplaySignature = displaySignature(nextDisplays)
+        let nextBrightnessSignature = brightnessSignature(nextBrightness)
+
+        guard nextStateModifiedAt != lastStateModifiedAt
+            || nextDisplaySignature != lastDisplaySignature
+            || nextBrightnessSignature != lastBrightnessSignature
+        else {
             return
         }
-        reload()
+
+        state = nextState
+        displays = nextDisplays
+        displayBrightness = nextBrightness
+        shortcutsEnabled = shortcutsAreRunning()
+        lastStateModifiedAt = nextStateModifiedAt
+        lastDisplaySignature = nextDisplaySignature
+        lastBrightnessSignature = nextBrightnessSignature
     }
 
-    private func stateModifiedAt() -> Date? {
-        try? FileManager.default
-            .attributesOfItem(atPath: RuntimePaths().stateURL.path)[.modificationDate] as? Date
+    private func selector(for display: Display) -> String {
+        state.syncExternalDisplays && !display.isBuiltin ? "external" : String(display.id)
+    }
+
+    private func selectorMatches(_ display: Display) -> Bool {
+        let selector = state.selector.lowercased()
+        if let id = UInt32(selector) {
+            return display.id == id
+        }
+
+        return selector == String(display.id)
+            || display.uuid.lowercased().contains(selector)
+            || (selector == "external" && !display.isBuiltin)
+            || selector == "all"
+    }
+
+    private func setLocalBrightness(_ value: Int, for display: Display) {
+        let percentage = Brightness(value).percentage
+        if state.syncExternalDisplays, !display.isBuiltin {
+            for external in displays where !external.isBuiltin {
+                displayBrightness[external.id] = percentage
+            }
+        } else {
+            displayBrightness[display.id] = percentage
+        }
+    }
+
+    private func currentBrightnessValues(for displays: [Display], state: RuntimeState) -> [CGDirectDisplayID: Int] {
+        var values: [CGDirectDisplayID: Int] = [:]
+        for display in displays {
+            guard display.isBuiltin || !state.overlayEnabled else {
+                continue
+            }
+
+            if let brightness = controller.currentBrightness(for: display) {
+                values[display.id] = brightness
+            }
+        }
+        return values
     }
 
     private func displaySignature(_ displays: [Display]) -> String {
         displays
             .map { "\($0.id):\($0.uuid):\($0.name):\($0.isOnline):\($0.isActive)" }
             .joined(separator: "|")
+    }
+
+    private func brightnessSignature(_ values: [CGDirectDisplayID: Int]) -> String {
+        values
+            .sorted { $0.key < $1.key }
+            .map { "\($0.key):\($0.value)" }
+            .joined(separator: "|")
+    }
+
+    private func stateModifiedAt() -> Date? {
+        try? FileManager.default
+            .attributesOfItem(atPath: RuntimePaths().stateURL.path)[.modificationDate] as? Date
     }
 
     private func shortcutsAreRunning() -> Bool {
@@ -248,29 +293,6 @@ final class LumenPanelController: NSViewController {
         }
 
         return kill(pid, 0) == 0 || errno == EPERM
-    }
-
-    private func runCLI(arguments: [String]) {
-        guard let candidate = glowkeyExecutableURL() else {
-            log("Unable to find glowkey CLI for arguments: \(arguments.joined(separator: " "))")
-            return
-        }
-
-        let process = Process()
-        process.executableURL = candidate
-        process.arguments = arguments
-        process.standardInput = FileHandle(forReadingAtPath: "/dev/null")
-        process.standardOutput = FileHandle(forWritingAtPath: "/dev/null")
-        process.standardError = FileHandle(forWritingAtPath: "/dev/null")
-        do {
-            try process.run()
-            process.waitUntilExit()
-            if process.terminationStatus != 0 {
-                log("glowkey exited \(process.terminationStatus) for arguments: \(arguments.joined(separator: " "))")
-            }
-        } catch {
-            log("Failed to run glowkey: \(error.localizedDescription)")
-        }
     }
 
     private func glowkeyExecutableURL() -> URL? {
@@ -290,21 +312,266 @@ final class LumenPanelController: NSViewController {
 
         return candidates.first { FileManager.default.isExecutableFile(atPath: $0.path) }
     }
+}
 
-    private func log(_ message: String) {
-        let line = "[\(Date())] \(message)\n"
-        let url = URL(fileURLWithPath: "/tmp/glowkey-menubar.err.log")
-        if let data = line.data(using: .utf8) {
-            if FileManager.default.fileExists(atPath: url.path),
-               let handle = try? FileHandle(forWritingTo: url)
-            {
-                try? handle.seekToEnd()
-                try? handle.write(contentsOf: data)
-                try? handle.close()
+private struct GlowKeyMenuView: View {
+    @ObservedObject var model: GlowKeyMenuModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            header
+
+            if model.displays.isEmpty {
+                Text("No displays found")
+                    .font(.callout.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, minHeight: 58)
             } else {
-                try? data.write(to: url)
+                VStack(spacing: 10) {
+                    ForEach(model.displays, id: \.id) { display in
+                        DisplayBrightnessRow(display: display, model: model)
+                    }
+                }
+            }
+
+            if !model.shortcutsEnabled {
+                permissionRow
+            }
+
+            shortcutsSection
+            footer
+        }
+        .padding(16)
+        .frame(width: 348)
+    }
+
+    private var header: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "sun.max.fill")
+                .font(.system(size: 22, weight: .regular))
+                .foregroundStyle(.yellow)
+
+            VStack(alignment: .leading, spacing: 0) {
+                Text("GlowKey")
+                    .font(.headline.weight(.semibold))
+                Text("Display brightness")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            Button {
+                model.refresh()
+            } label: {
+                Image(systemName: "arrow.clockwise")
+            }
+            .buttonStyle(.borderless)
+            .help("Refresh displays")
+
+            Button {
+                model.quit()
+            } label: {
+                Image(systemName: "xmark")
+            }
+            .buttonStyle(.borderless)
+            .help("Quit GlowKey")
+        }
+    }
+
+    private var permissionRow: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Shortcuts need access")
+                    .font(.callout.weight(.semibold))
+                Text("Enable Accessibility permission")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            Button("Open") {
+                model.openAccessibilitySettings()
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+        }
+        .padding(12)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private var shortcutsSection: some View {
+        DisclosureGroup(isExpanded: $model.shortcutsExpanded) {
+            VStack(alignment: .leading, spacing: 8) {
+                ShortcutLine(title: "Cursor display", keys: "fn + F1 / F2")
+                ShortcutLine(title: "Fallback", keys: "cmd + option + - / =")
+            }
+            .padding(.top, 8)
+        } label: {
+            Label("Shortcuts", systemImage: "keyboard")
+                .font(.callout.weight(.semibold))
+        }
+    }
+
+    private var footer: some View {
+        HStack(spacing: 8) {
+            Button(model.state.syncExternalDisplays ? "Sync On" : "Sync Off") {
+                model.toggleSync()
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.regular)
+
+            Spacer()
+
+            Text(model.shortcutsEnabled ? "Shortcuts on" : "Shortcuts off")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
+private struct DisplayBrightnessRow: View {
+    let display: Display
+    @ObservedObject var model: GlowKeyMenuModel
+
+    var body: some View {
+        let value = model.brightness(for: display)
+
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                Image(systemName: display.isBuiltin ? "laptopcomputer" : "display")
+                    .font(.system(size: 17, weight: .regular))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 24)
+
+                Text(model.displayTitle(display))
+                    .font(.title3.weight(.semibold))
+                    .lineLimit(1)
+
+                Spacer()
+
+                Text("\(value)%")
+                    .font(.title3.weight(.semibold))
+                    .monospacedDigit()
+            }
+
+            HStack(spacing: 10) {
+                Image(systemName: "sun.min.fill")
+                    .font(.system(size: 15))
+                    .foregroundStyle(.white)
+
+                WhiteBrightnessSlider(
+                    value: value,
+                    onEditingBegan: {
+                        model.beginDragging()
+                    },
+                    onChange: { nextValue in
+                        model.liveSet(nextValue, for: display)
+                    },
+                    onCommit: { nextValue in
+                        model.commit(nextValue, for: display)
+                    }
+                )
+                .frame(height: 26)
+
+                Image(systemName: "sun.max.fill")
+                    .font(.system(size: 18))
+                    .foregroundStyle(.white)
             }
         }
+        .padding(.vertical, 4)
+    }
+}
+
+private struct WhiteBrightnessSlider: View {
+    let value: Int
+    let onEditingBegan: () -> Void
+    let onChange: (Int) -> Void
+    let onCommit: (Int) -> Void
+
+    @State private var dragValue: Int?
+    @State private var isDragging = false
+
+    private var displayedValue: Int {
+        dragValue ?? value
+    }
+
+    var body: some View {
+        GeometryReader { proxy in
+            let width = max(proxy.size.width, 1)
+            let ratio = CGFloat(displayedValue) / 100
+            let knobSize: CGFloat = isDragging ? 24 : 21
+            let trackHeight: CGFloat = 5
+            let knobX = min(max(width * ratio, knobSize / 2), width - knobSize / 2)
+
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(.white.opacity(0.22))
+                    .frame(height: trackHeight)
+
+                Capsule()
+                    .fill(.white)
+                    .frame(width: max(trackHeight, width * ratio), height: trackHeight)
+
+                Circle()
+                    .fill(.white)
+                    .frame(width: knobSize, height: knobSize)
+                    .shadow(color: .black.opacity(0.22), radius: 2, y: 1)
+                    .overlay {
+                        Circle().stroke(.white.opacity(0.65), lineWidth: 1)
+                    }
+                    .offset(x: knobX - knobSize / 2)
+            }
+            .frame(height: proxy.size.height)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { gesture in
+                        if !isDragging {
+                            isDragging = true
+                            onEditingBegan()
+                        }
+                        let nextValue = valueFrom(locationX: gesture.location.x, width: width)
+                        if dragValue != nextValue {
+                            dragValue = nextValue
+                            onChange(nextValue)
+                        }
+                    }
+                    .onEnded { gesture in
+                        let finalValue = valueFrom(locationX: gesture.location.x, width: width)
+                        dragValue = nil
+                        isDragging = false
+                        onCommit(finalValue)
+                    }
+            )
+        }
+        .accessibilityLabel("Brightness")
+        .accessibilityValue("\(displayedValue)%")
+    }
+
+    private func valueFrom(locationX: CGFloat, width: CGFloat) -> Int {
+        let ratio = min(1, max(0, locationX / max(width, 1)))
+        return Brightness(Int((ratio * 100).rounded())).percentage
+    }
+}
+
+private struct ShortcutLine: View {
+    let title: String
+    let keys: String
+
+    var body: some View {
+        HStack {
+            Text(title)
+                .foregroundStyle(.secondary)
+            Spacer()
+            Text(keys)
+                .font(.system(.caption, design: .monospaced).weight(.semibold))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(.quaternary, in: Capsule())
+        }
+        .font(.caption)
     }
 }
 
@@ -369,705 +636,3 @@ private final class MenuApplyCoordinator: @unchecked Sendable {
         return revisions[selector] == revision
     }
 }
-
-@MainActor
-final class LumenPanelView: NSView {
-    private let apply: (String, Int) -> Void
-    private let commit: (String, Int, @escaping () -> Void) -> Void
-    private let toggleSync: () -> Void
-    private let draggingChanged: (Bool) -> Void
-    private let refresh: () -> Void
-    private let quit: () -> Void
-    private let state: RuntimeState
-    private let shortcutsEnabled: Bool
-    private var shortcutsPanel: NSView?
-    private var transientPanelTitle: String?
-    private var liveApplyWorkItems: [String: DispatchWorkItem] = [:]
-    private var lastScheduledValues: [String: Int] = [:]
-
-    init(
-        state: RuntimeState,
-        displays: [Display],
-        shortcutsEnabled: Bool,
-        apply: @escaping (String, Int) -> Void,
-        commit: @escaping (String, Int, @escaping () -> Void) -> Void,
-        toggleSync: @escaping () -> Void,
-        draggingChanged: @escaping (Bool) -> Void,
-        refresh: @escaping () -> Void,
-        quit: @escaping () -> Void
-    ) {
-        self.state = state
-        self.shortcutsEnabled = shortcutsEnabled
-        self.apply = apply
-        self.commit = commit
-        self.toggleSync = toggleSync
-        self.draggingChanged = draggingChanged
-        self.refresh = refresh
-        self.quit = quit
-        super.init(frame: NSRect(x: 0, y: 0, width: 400, height: Self.height(for: displays, shortcutsEnabled: shortcutsEnabled)))
-        wantsLayer = true
-        build(displays: displays)
-        if CommandLine.arguments.contains("--open-shortcuts") {
-            DispatchQueue.main.async { [weak self] in
-                self?.shortcutsTapped()
-            }
-        }
-    }
-
-    required init?(coder: NSCoder) {
-        nil
-    }
-
-    override func viewWillMove(toWindow newWindow: NSWindow?) {
-        if newWindow == nil {
-            cancelPendingLiveApplies()
-            draggingChanged(false)
-        }
-        super.viewWillMove(toWindow: newWindow)
-    }
-
-    private static func height(for displays: [Display], shortcutsEnabled: Bool) -> CGFloat {
-        132 + CGFloat(max(displays.count, 1)) * 96 + (shortcutsEnabled ? 0 : 48)
-    }
-
-    private func build(displays: [Display]) {
-        addSubview(GlassBackdrop(frame: bounds), positioned: .below, relativeTo: nil)
-
-        let x: CGFloat = 18
-        var y = bounds.height - 56
-
-        let top = topBar()
-        top.frame.origin = NSPoint(x: x, y: y)
-        addSubview(top)
-
-        y -= 88
-        if displays.isEmpty {
-            let card = emptyCard()
-            card.frame.origin = NSPoint(x: x, y: y)
-            addSubview(card)
-            y -= 92
-        } else {
-            for display in displays {
-                let card = displayCard(display)
-                card.frame.origin = NSPoint(x: x, y: y)
-                addSubview(card)
-                y -= 96
-            }
-        }
-
-        if !shortcutsEnabled {
-            let permission = permissionPanel()
-            permission.frame.origin = NSPoint(x: x, y: 74)
-            addSubview(permission)
-        }
-
-        let footerPanel = footer()
-        footerPanel.frame.origin = NSPoint(x: x, y: 14)
-        addSubview(footerPanel)
-    }
-
-    private func topBar() -> NSView {
-        let row = NSStackView(frame: NSRect(x: 0, y: 0, width: 364, height: 44))
-        row.orientation = .horizontal
-        row.alignment = .centerY
-        row.spacing = 10
-
-        let icon = NSImageView(frame: NSRect(x: 0, y: 0, width: 30, height: 30))
-        icon.image = LumenIcon.panelImage()
-
-        let titleBlock = NSStackView(frame: NSRect(x: 0, y: 0, width: 170, height: 38))
-        titleBlock.orientation = .vertical
-        titleBlock.alignment = .leading
-        titleBlock.spacing = -1
-
-        let title = NSTextField(labelWithString: "GlowKey")
-        title.font = .systemFont(ofSize: 20, weight: .black)
-        title.textColor = mainText
-
-        let subtitle = NSTextField(labelWithString: "Display brightness")
-        subtitle.font = .systemFont(ofSize: 11, weight: .bold)
-        subtitle.textColor = mutedText
-
-        titleBlock.addArrangedSubview(title)
-        titleBlock.addArrangedSubview(subtitle)
-
-        let spacer = NSView()
-        let refreshButton = symbolButton("arrow.clockwise", action: #selector(refreshTapped))
-        let quitButton = symbolButton("xmark", action: #selector(quitTapped))
-
-        row.addArrangedSubview(icon)
-        row.addArrangedSubview(titleBlock)
-        row.addArrangedSubview(spacer)
-        row.addArrangedSubview(refreshButton)
-        row.addArrangedSubview(quitButton)
-        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        return row
-    }
-
-    private func displayCard(_ display: Display) -> NSView {
-        let value = brightness(for: display)
-        let card = CardView(frame: NSRect(x: 0, y: 0, width: 364, height: 80))
-        card.accentColor = display.isBuiltin ? softGray : peach
-        card.secondaryAccentColor = display.isBuiltin ? glassBlue : glassPink
-        card.isActive = selectorMatches(display)
-        card.isDimmed = value <= 25
-
-        let icon = NSTextField(labelWithString: display.isBuiltin ? "▣" : "▭")
-        icon.font = .systemFont(ofSize: 21, weight: .bold)
-        icon.textColor = display.isBuiltin ? softGray : peach
-        icon.alignment = .center
-        icon.frame = NSRect(x: 16, y: 43, width: 28, height: 24)
-        card.addSubview(icon)
-
-        let title = NSTextField(labelWithString: displayTitle(display))
-        title.font = .systemFont(ofSize: 17, weight: .black)
-        title.textColor = mainText
-        title.alignment = .left
-        title.lineBreakMode = .byTruncatingTail
-        title.frame = NSRect(x: 52, y: 47, width: 214, height: 22)
-        card.addSubview(title)
-
-        let percent = NSTextField(labelWithString: "\(value)%")
-        percent.font = .systemFont(ofSize: 16, weight: .black)
-        percent.textColor = display.isBuiltin ? softGray : peach
-        percent.alignment = .right
-        percent.frame = NSRect(x: 282, y: 47, width: 58, height: 22)
-        card.addSubview(percent)
-
-        let bar = BrightnessBar(
-            frame: NSRect(x: 48, y: 12, width: 296, height: 26),
-            value: value,
-            isEnabled: true,
-            fillColor: display.isBuiltin ? softGray : peach,
-            onDragStart: { [weak self] in
-                self?.draggingChanged(true)
-            },
-            onChange: { [weak self] value in
-                percent.stringValue = "\(value)%"
-                self?.scheduleLiveApply(selector: self?.selector(for: display) ?? String(display.id), value: value)
-            },
-            onCommit: { [weak self] value in
-                let selector = self?.selector(for: display) ?? String(display.id)
-                self?.liveApplyWorkItems[selector]?.cancel()
-                self?.liveApplyWorkItems[selector] = nil
-                self?.commit(selector, value) { [weak self] in
-                    self?.draggingChanged(false)
-                    self?.refresh()
-                }
-            }
-        )
-        card.addSubview(bar)
-
-        return card
-    }
-
-    private func selector(for display: Display) -> String {
-        state.syncExternalDisplays && !display.isBuiltin ? "external" : String(display.id)
-    }
-
-    private func displayTitle(_ display: Display) -> String {
-        if display.isBuiltin {
-            return "MacBook Pro"
-        }
-
-        if display.name.lowercased().hasPrefix("external display") {
-            return "External \(display.resolutionDescription)"
-        }
-
-        return display.name
-    }
-
-    private func brightness(for display: Display) -> Int {
-        if let value = state.displayBrightness[String(display.id)] ?? state.displayBrightness[display.uuid] {
-            return value
-        }
-
-        if display.isBuiltin {
-            return state.displayBrightness["all"] ?? (selectorMatches(display) ? state.brightness : 100)
-        }
-
-        if let groupedValue = state.displayBrightness["external"] ?? state.displayBrightness["all"] {
-            return groupedValue
-        }
-
-        return selectorMatches(display) ? state.brightness : 100
-    }
-
-    private func selectorMatches(_ display: Display) -> Bool {
-        let selector = state.selector.lowercased()
-        if let id = UInt32(selector) {
-            return display.id == id
-        }
-
-        return selector == String(display.id)
-            || display.uuid.lowercased().contains(selector)
-            || (selector == "external" && !display.isBuiltin)
-            || selector == "all"
-    }
-
-    private func emptyCard() -> NSView {
-        let card = CardView(frame: NSRect(x: 0, y: 0, width: 364, height: 80))
-        card.accentColor = mutedText
-        card.secondaryAccentColor = glassBlue
-        let title = NSTextField(labelWithString: "No Displays")
-        title.font = .systemFont(ofSize: 21, weight: .black)
-        title.textColor = mainText
-        title.alignment = .center
-        title.frame = NSRect(x: 20, y: 42, width: 324, height: 26)
-        card.addSubview(title)
-        let sub = chip("Connect a monitor", fill: NSColor.black.withAlphaComponent(0.22), text: mutedText)
-        sub.font = .systemFont(ofSize: 11, weight: .black)
-        sub.frame = NSRect(x: 109, y: 17, width: 146, height: 24)
-        card.addSubview(sub)
-        return card
-    }
-
-    private func permissionPanel() -> NSView {
-        let panel = GlassPanelView(frame: NSRect(x: 0, y: 0, width: 364, height: 42))
-        panel.cornerRadius = 14
-        panel.accentColor = peach
-        panel.secondaryAccentColor = glassPink
-
-        let label = NSTextField(labelWithString: "Shortcuts need Accessibility permission")
-        label.font = .systemFont(ofSize: 11, weight: .bold)
-        label.textColor = mainText
-        label.frame = NSRect(x: 12, y: 13, width: 220, height: 16)
-        panel.addSubview(label)
-
-        let button = NSButton(title: "Open", target: self, action: #selector(openAccessibilitySettings))
-        button.bezelStyle = .rounded
-        button.font = .systemFont(ofSize: 11, weight: .bold)
-        button.frame = NSRect(x: 282, y: 8, width: 66, height: 26)
-        panel.addSubview(button)
-        return panel
-    }
-
-    private func footer() -> NSView {
-        let panel = GlassPanelView(frame: NSRect(x: 0, y: 0, width: 364, height: 48))
-        panel.cornerRadius = 16
-        panel.accentColor = peach
-        panel.secondaryAccentColor = glassBlue
-
-        let sync = NSButton(title: state.syncExternalDisplays ? "Sync On" : "Sync Off", target: self, action: #selector(syncTapped))
-        sync.bezelStyle = .rounded
-        sync.font = .systemFont(ofSize: 12, weight: .bold)
-        sync.frame = NSRect(x: 18, y: 10, width: 154, height: 28)
-        panel.addSubview(sync)
-
-        let shortcuts = NSButton(title: "Shortcuts", target: self, action: #selector(shortcutsTapped))
-        shortcuts.bezelStyle = .rounded
-        shortcuts.font = .systemFont(ofSize: 12, weight: .bold)
-        shortcuts.frame = NSRect(x: 192, y: 10, width: 154, height: 28)
-        panel.addSubview(shortcuts)
-        return panel
-    }
-
-    private func symbolButton(_ symbol: String, action: Selector) -> NSButton {
-        let button = NSButton(image: NSImage(systemSymbolName: symbol, accessibilityDescription: nil) ?? NSImage(), target: self, action: action)
-        button.bezelStyle = .rounded
-        button.frame = NSRect(x: 0, y: 0, width: 38, height: 32)
-        return button
-    }
-
-    private func chip(_ title: String, fill: NSColor, text: NSColor) -> NSTextField {
-        let field = NSTextField(labelWithString: title)
-        field.alignment = .center
-        field.textColor = text
-        field.wantsLayer = true
-        field.layer?.cornerRadius = 12
-        field.layer?.backgroundColor = fill.cgColor
-        return field
-    }
-
-    @objc private func refreshTapped() {
-        refresh()
-    }
-
-    @objc private func quitTapped() {
-        quit()
-    }
-
-    @objc private func shortcutsTapped() {
-        showTransientPanel(
-            title: "Shortcuts",
-            lines: [
-                "Cursor display: fn + F1 / fn + F2",
-                "Fallback: command + option + - / =",
-                "Mac F1/F2 stays native"
-            ]
-        )
-    }
-
-    @objc private func syncTapped() {
-        toggleSync()
-    }
-
-    @objc private func openAccessibilitySettings() {
-        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") else {
-            return
-        }
-        NSWorkspace.shared.open(url)
-    }
-
-    private func showTransientPanel(title: String, lines: [String]) {
-        if transientPanelTitle == title {
-            shortcutsPanel?.removeFromSuperview()
-            shortcutsPanel = nil
-            transientPanelTitle = nil
-            return
-        }
-        shortcutsPanel?.removeFromSuperview()
-
-        let panel = GlassPanelView(frame: NSRect(x: 18, y: 70, width: 364, height: 104))
-        panel.cornerRadius = 20
-        panel.accentColor = glassBlue
-        panel.secondaryAccentColor = glassPink
-
-        let titleField = NSTextField(labelWithString: title)
-        titleField.font = .systemFont(ofSize: 17, weight: .black)
-        titleField.textColor = mainText
-        titleField.frame = NSRect(x: 18, y: 70, width: 220, height: 24)
-        panel.addSubview(titleField)
-
-        let closeButton = NSButton(title: "Close", target: self, action: #selector(closeTransientPanel))
-        closeButton.bezelStyle = .rounded
-        closeButton.font = .systemFont(ofSize: 12, weight: .bold)
-        closeButton.frame = NSRect(x: 276, y: 68, width: 70, height: 26)
-        panel.addSubview(closeButton)
-
-        var y: CGFloat = 48
-        for line in lines {
-            let field = NSTextField(labelWithString: line)
-            field.font = .systemFont(ofSize: 12, weight: .bold)
-            field.textColor = mutedText
-            field.frame = NSRect(x: 18, y: y, width: 326, height: 18)
-            panel.addSubview(field)
-            y -= 20
-        }
-
-        addSubview(panel)
-        shortcutsPanel = panel
-        transientPanelTitle = title
-    }
-
-    private func scheduleLiveApply(selector: String, value: Int) {
-        guard lastScheduledValues[selector] != value else {
-            return
-        }
-        lastScheduledValues[selector] = value
-        liveApplyWorkItems[selector]?.cancel()
-        let workItem = DispatchWorkItem { [weak self] in
-            self?.apply(selector, value)
-        }
-        liveApplyWorkItems[selector] = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.075, execute: workItem)
-    }
-
-    private func cancelPendingLiveApplies() {
-        for workItem in liveApplyWorkItems.values {
-            workItem.cancel()
-        }
-        liveApplyWorkItems.removeAll()
-        lastScheduledValues.removeAll()
-    }
-
-    @objc private func closeTransientPanel() {
-        shortcutsPanel?.removeFromSuperview()
-        shortcutsPanel = nil
-        transientPanelTitle = nil
-    }
-
-    private var mainText: NSColor { NSColor(calibratedRed: 0.96, green: 0.95, blue: 0.98, alpha: 1) }
-    private var warmText: NSColor { NSColor(calibratedRed: 0.82, green: 0.79, blue: 0.88, alpha: 1) }
-    private var mutedText: NSColor { NSColor(calibratedRed: 0.66, green: 0.66, blue: 0.74, alpha: 1) }
-    private var peach: NSColor { NSColor(calibratedRed: 1.0, green: 0.78, blue: 0.48, alpha: 1) }
-    private var softGray: NSColor { NSColor(calibratedRed: 0.74, green: 0.82, blue: 0.92, alpha: 1) }
-    private var glassBlue: NSColor { NSColor(calibratedRed: 0.33, green: 0.78, blue: 1.0, alpha: 1) }
-    private var glassPink: NSColor { NSColor(calibratedRed: 1.0, green: 0.42, blue: 0.72, alpha: 1) }
-    private var panelFill: NSColor { NSColor.white.withAlphaComponent(0.075) }
-}
-
-final class GlassBackdrop: NSView {
-    override func draw(_ dirtyRect: NSRect) {
-        let base = NSBezierPath(roundedRect: bounds, xRadius: 28, yRadius: 28)
-        NSGradient(colors: [
-            NSColor(calibratedRed: 0.05, green: 0.07, blue: 0.11, alpha: 0.98),
-            NSColor(calibratedRed: 0.10, green: 0.08, blue: 0.16, alpha: 0.98),
-            NSColor(calibratedRed: 0.06, green: 0.06, blue: 0.09, alpha: 0.98)
-        ])?.draw(in: base, angle: 255)
-
-        drawOrb(
-            rect: NSRect(x: -72, y: bounds.height - 150, width: 210, height: 210),
-            color: NSColor(calibratedRed: 0.12, green: 0.62, blue: 1.0, alpha: 0.26)
-        )
-        drawOrb(
-            rect: NSRect(x: bounds.width - 148, y: -58, width: 230, height: 230),
-            color: NSColor(calibratedRed: 1.0, green: 0.54, blue: 0.22, alpha: 0.25)
-        )
-        drawOrb(
-            rect: NSRect(x: 118, y: bounds.height - 118, width: 210, height: 170),
-            color: NSColor(calibratedRed: 0.95, green: 0.30, blue: 0.62, alpha: 0.16)
-        )
-
-        NSColor.white.withAlphaComponent(0.09).setStroke()
-        let stroke = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 28, yRadius: 28)
-        stroke.lineWidth = 1
-        stroke.stroke()
-    }
-
-    private func drawOrb(rect: NSRect, color: NSColor) {
-        NSGradient(colors: [
-            color,
-            color.withAlphaComponent(0.02)
-        ])?.draw(in: NSBezierPath(ovalIn: rect), relativeCenterPosition: NSPoint(x: -0.18, y: 0.22))
-    }
-}
-
-class GlassPanelView: NSView {
-    var accentColor: NSColor = .systemOrange
-    var secondaryAccentColor: NSColor = .systemBlue
-    var cornerRadius: CGFloat = 18
-
-    override var isFlipped: Bool {
-        false
-    }
-
-    override func draw(_ dirtyRect: NSRect) {
-        let rect = bounds.insetBy(dx: 0.5, dy: 0.5)
-        let path = NSBezierPath(roundedRect: rect, xRadius: cornerRadius, yRadius: cornerRadius)
-
-        NSGradient(colors: [
-            NSColor.white.withAlphaComponent(0.17),
-            accentColor.withAlphaComponent(0.08),
-            NSColor.black.withAlphaComponent(0.20)
-        ])?.draw(in: path, angle: 255)
-
-        NSColor.black.withAlphaComponent(0.16).setFill()
-        NSBezierPath(roundedRect: rect.offsetBy(dx: 0, dy: -1), xRadius: cornerRadius, yRadius: cornerRadius).fill()
-
-        NSGradient(colors: [
-            NSColor.white.withAlphaComponent(0.30),
-            secondaryAccentColor.withAlphaComponent(0.16),
-            NSColor.white.withAlphaComponent(0.07)
-        ])?.draw(in: path, angle: 25)
-
-        NSColor.white.withAlphaComponent(0.20).setStroke()
-        path.lineWidth = 1
-        path.stroke()
-
-        accentColor.withAlphaComponent(0.26).setStroke()
-        let glow = NSBezierPath(roundedRect: rect.insetBy(dx: 1.5, dy: 1.5), xRadius: max(0, cornerRadius - 2), yRadius: max(0, cornerRadius - 2))
-        glow.lineWidth = 1
-        glow.stroke()
-    }
-}
-
-final class CardView: NSView {
-    var accentColor: NSColor = .systemOrange
-    var secondaryAccentColor: NSColor = .systemBlue
-    var isActive = false
-    var isDimmed = false
-
-    override func draw(_ dirtyRect: NSRect) {
-        let rect = bounds.insetBy(dx: 0.5, dy: 0.5)
-        let radius: CGFloat = 24
-        let path = NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius)
-
-        NSColor.black.withAlphaComponent(0.22).setFill()
-        NSBezierPath(roundedRect: rect.offsetBy(dx: 0, dy: -2), xRadius: radius, yRadius: radius).fill()
-
-        NSGradient(colors: [
-            NSColor.white.withAlphaComponent(isDimmed ? 0.08 : 0.15),
-            accentColor.withAlphaComponent(isActive ? 0.18 : 0.08),
-            NSColor(calibratedRed: 0.07, green: 0.08, blue: 0.12, alpha: 0.70)
-        ])?.draw(in: path, angle: 250)
-
-        NSGradient(colors: [
-            accentColor.withAlphaComponent(isActive ? 0.30 : 0.16),
-            secondaryAccentColor.withAlphaComponent(0.10),
-            NSColor.clear
-        ])?.draw(in: path, angle: 15)
-
-        if isActive {
-            accentColor.withAlphaComponent(0.55).setStroke()
-        } else {
-            NSColor.white.withAlphaComponent(0.15).setStroke()
-        }
-        let stroke = NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius)
-        stroke.lineWidth = isActive ? 2 : 1
-        stroke.stroke()
-
-        let highlight = NSBezierPath(roundedRect: rect.insetBy(dx: 1.5, dy: 1.5), xRadius: radius - 2, yRadius: radius - 2)
-        NSColor.white.withAlphaComponent(0.10).setStroke()
-        highlight.lineWidth = 1
-        highlight.stroke()
-
-        NSGradient(colors: [
-            accentColor.withAlphaComponent(0.95),
-            secondaryAccentColor.withAlphaComponent(0.72)
-        ])?.draw(
-            in: NSBezierPath(roundedRect: NSRect(x: 0, y: 9, width: 5, height: bounds.height - 18), xRadius: 2.5, yRadius: 2.5),
-            angle: 90
-        )
-    }
-}
-
-final class BrightnessBar: NSView {
-    private var value: Int
-    private var visualValue: CGFloat
-    private var lastEmittedValue: Int
-    private let controlEnabled: Bool
-    private let onDragStart: () -> Void
-    private let onChange: (Int) -> Void
-    private let onCommit: (Int) -> Void
-    private let fill: NSColor
-    private let track = NSColor.white.withAlphaComponent(0.15)
-    private let knob = NSColor(calibratedRed: 0.98, green: 0.98, blue: 1.0, alpha: 1)
-    private var isTracking = false
-
-    init(
-        frame: NSRect,
-        value: Int,
-        isEnabled: Bool,
-        fillColor: NSColor,
-        onDragStart: @escaping () -> Void,
-        onChange: @escaping (Int) -> Void,
-        onCommit: @escaping (Int) -> Void
-    ) {
-        let clampedValue = min(100, max(0, value))
-        self.value = clampedValue
-        self.visualValue = CGFloat(clampedValue)
-        self.lastEmittedValue = clampedValue
-        self.controlEnabled = isEnabled
-        self.fill = fillColor
-        self.onDragStart = onDragStart
-        self.onChange = onChange
-        self.onCommit = onCommit
-        super.init(frame: frame)
-        wantsLayer = true
-        layerContentsRedrawPolicy = .onSetNeedsDisplay
-        toolTip = "Drag to change brightness"
-    }
-
-    required init?(coder: NSCoder) {
-        nil
-    }
-
-    override var acceptsFirstResponder: Bool {
-        controlEnabled
-    }
-
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
-        controlEnabled
-    }
-
-    override func draw(_ dirtyRect: NSRect) {
-        let alpha: CGFloat = controlEnabled ? 1 : 0.42
-        let bar = trackRect
-
-        NSColor.black.withAlphaComponent(0.20 * alpha).setFill()
-        NSBezierPath(roundedRect: bar.offsetBy(dx: 0, dy: -1), xRadius: bar.height / 2, yRadius: bar.height / 2).fill()
-        track.withAlphaComponent(alpha).setFill()
-        NSBezierPath(roundedRect: bar, xRadius: bar.height / 2, yRadius: bar.height / 2).fill()
-
-        let fillWidth = bar.width * visualValue / 100
-        let fillRect = NSRect(x: bar.minX, y: bar.minY, width: fillWidth, height: bar.height)
-        if fillRect.width > 0 {
-            NSGradient(colors: [
-                fill.withAlphaComponent(alpha * 0.92),
-                NSColor(calibratedRed: 0.62, green: 0.86, blue: 1.0, alpha: alpha * 0.92),
-                NSColor.white.withAlphaComponent(alpha * 0.82)
-            ])?.draw(
-                in: NSBezierPath(roundedRect: fillRect, xRadius: bar.height / 2, yRadius: bar.height / 2),
-                angle: 0
-            )
-        }
-
-        let knobX = bar.minX + fillWidth
-        let knobSize: CGFloat = isTracking ? 29 : 26
-        let knobRect = NSRect(x: knobX - knobSize / 2, y: bar.midY - knobSize / 2, width: knobSize, height: knobSize)
-        NSColor.black.withAlphaComponent(0.32).setFill()
-        NSBezierPath(ovalIn: knobRect.offsetBy(dx: 0, dy: -2)).fill()
-        NSGradient(colors: [
-            NSColor.white.withAlphaComponent(alpha),
-            knob.withAlphaComponent(alpha * 0.90),
-            fill.withAlphaComponent(alpha * 0.56)
-        ])?.draw(in: NSBezierPath(ovalIn: knobRect), angle: 245)
-        NSColor.white.withAlphaComponent(0.62).setStroke()
-        let knobStroke = NSBezierPath(ovalIn: knobRect.insetBy(dx: 0.5, dy: 0.5))
-        knobStroke.lineWidth = 1
-        knobStroke.stroke()
-    }
-
-    override func mouseDown(with event: NSEvent) {
-        guard controlEnabled else {
-            return
-        }
-
-        isTracking = true
-        needsDisplay = true
-        onDragStart()
-        updateValue(from: event)
-        var keepTracking = true
-        while keepTracking, let next = window?.nextEvent(matching: [.leftMouseDragged, .leftMouseUp]) {
-            switch next.type {
-            case .leftMouseDragged:
-                updateValue(from: next)
-            case .leftMouseUp:
-                updateValue(from: next)
-                keepTracking = false
-            default:
-                break
-            }
-        }
-        isTracking = false
-        needsDisplay = true
-        onCommit(value)
-    }
-
-    private func updateValue(from event: NSEvent) {
-        let point = convert(event.locationInWindow, from: nil)
-        let bar = trackRect
-        let ratio = min(1, max(0, (point.x - bar.minX) / bar.width))
-        visualValue = ratio * 100
-        value = Int(visualValue.rounded())
-        if value != lastEmittedValue {
-            lastEmittedValue = value
-            onChange(value)
-        }
-        needsDisplay = true
-    }
-
-    private var trackRect: NSRect {
-        NSRect(x: 8, y: bounds.midY - 6, width: bounds.width - 16, height: 12)
-    }
-}
-
-final class PeachSliderCell: NSSliderCell {
-    private let fill = NSColor(calibratedRed: 1.0, green: 0.73, blue: 0.46, alpha: 1)
-    private let track = NSColor(calibratedRed: 0.22, green: 0.19, blue: 0.17, alpha: 1)
-    private let knob = NSColor(calibratedRed: 1.0, green: 0.78, blue: 0.55, alpha: 1)
-
-    override func drawBar(inside rect: NSRect, flipped: Bool) {
-        let bar = NSRect(x: rect.minX, y: rect.midY - 5, width: rect.width, height: 10)
-        track.setFill()
-        NSBezierPath(roundedRect: bar, xRadius: 5, yRadius: 5).fill()
-
-        let range = maxValue - minValue
-        let ratio = range == 0 ? 0 : CGFloat((doubleValue - minValue) / range)
-        let fillRect = NSRect(x: bar.minX, y: bar.minY, width: bar.width * max(0, min(1, ratio)), height: bar.height)
-        fill.setFill()
-        NSBezierPath(roundedRect: fillRect, xRadius: 5, yRadius: 5).fill()
-    }
-
-    override func drawKnob(_ knobRect: NSRect) {
-        let rect = knobRect.insetBy(dx: -2, dy: -2)
-        knob.setFill()
-        NSBezierPath(ovalIn: rect).fill()
-    }
-}
-
-let app = NSApplication.shared
-let delegate = MenuBarApp()
-app.delegate = delegate
-app.run()

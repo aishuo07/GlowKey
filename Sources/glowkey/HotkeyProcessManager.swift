@@ -104,45 +104,18 @@ struct HotkeyProcessManager {
     }
 
     private func helperExecutableURL() throws -> URL {
-        let currentExecutable = URL(fileURLWithPath: CommandLine.arguments[0])
-        let currentDirectory = currentExecutable.deletingLastPathComponent()
-        let workingDirectory = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-        let candidates = [
-            userApplicationExecutable("glowkey-hotkeys"),
-            currentDirectory.appendingPathComponent("glowkey-hotkeys"),
-            workingDirectory.appendingPathComponent(".build/debug/glowkey-hotkeys"),
-            workingDirectory.appendingPathComponent(".build/release/glowkey-hotkeys")
-        ].compactMap(\.self)
-
-        for candidate in candidates where FileManager.default.isExecutableFile(atPath: candidate.path) {
-            return candidate
-        }
-
-        throw CLIError.invalidUsage("Hotkey helper is missing. Run `swift build`, then try again.")
+        try ExecutableResolver.firstExecutable(
+            named: "glowkey-hotkeys",
+            missingMessage: "Hotkey helper is missing. Run `swift build`, then try again."
+        )
     }
 
     private func glowkeyExecutableURL() throws -> URL {
-        let currentExecutable = URL(fileURLWithPath: CommandLine.arguments[0])
-        let workingDirectory = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-        let candidates = [
-            userApplicationExecutable("glowkey"),
-            currentExecutable,
-            workingDirectory.appendingPathComponent(".build/debug/glowkey"),
-            workingDirectory.appendingPathComponent(".build/release/glowkey")
-        ].compactMap(\.self)
-
-        for candidate in candidates where FileManager.default.isExecutableFile(atPath: candidate.path) {
-            return candidate
-        }
-
-        throw CLIError.invalidUsage("GlowKey executable is missing. Run `swift build`, then try again.")
-    }
-
-    private func userApplicationExecutable(_ name: String) -> URL? {
-        FileManager.default.urls(for: .applicationDirectory, in: .userDomainMask).first?
-            .appendingPathComponent("GlowKey.app", isDirectory: true)
-            .appendingPathComponent("Contents/MacOS", isDirectory: true)
-            .appendingPathComponent(name)
+        try ExecutableResolver.firstExecutable(
+            named: "glowkey",
+            includeCurrentExecutableIfNamed: true,
+            missingMessage: "GlowKey executable is missing. Run `swift build`, then try again."
+        )
     }
 
     private func knownPID() -> pid_t? {

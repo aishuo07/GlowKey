@@ -5,13 +5,16 @@ import GlowKeyCore
 struct MenuBarProcessManager {
     private let paths = RuntimePaths()
 
-    func start() throws {
+    func start(open: Bool = false) throws {
         if status().isRunning {
             return
         }
 
         let process = Process()
         process.executableURL = try menuBarExecutableURL()
+        if open {
+            process.arguments = ["--open"]
+        }
         process.standardInput = FileHandle(forReadingAtPath: "/dev/null")
         process.standardOutput = FileHandle(forWritingAtPath: "/dev/null")
         process.standardError = FileHandle(forWritingAtPath: "/dev/null")
@@ -69,28 +72,10 @@ struct MenuBarProcessManager {
     }
 
     private func menuBarExecutableURL() throws -> URL {
-        let currentExecutable = URL(fileURLWithPath: CommandLine.arguments[0])
-        let currentDirectory = currentExecutable.deletingLastPathComponent()
-        let workingDirectory = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-        let candidates = [
-            userApplicationExecutable("glowkey-menubar"),
-            currentDirectory.appendingPathComponent("glowkey-menubar"),
-            workingDirectory.appendingPathComponent(".build/debug/glowkey-menubar"),
-            workingDirectory.appendingPathComponent(".build/release/glowkey-menubar")
-        ].compactMap(\.self)
-
-        for candidate in candidates where FileManager.default.isExecutableFile(atPath: candidate.path) {
-            return candidate
-        }
-
-        throw CLIError.invalidUsage("Menu-bar helper is missing. Run `swift build`, then try again.")
-    }
-
-    private func userApplicationExecutable(_ name: String) -> URL? {
-        FileManager.default.urls(for: .applicationDirectory, in: .userDomainMask).first?
-            .appendingPathComponent("GlowKey.app", isDirectory: true)
-            .appendingPathComponent("Contents/MacOS", isDirectory: true)
-            .appendingPathComponent(name)
+        try ExecutableResolver.firstExecutable(
+            named: "glowkey-menubar",
+            missingMessage: "Menu-bar helper is missing. Run `swift build`, then try again."
+        )
     }
 
     private func knownPID() -> pid_t? {

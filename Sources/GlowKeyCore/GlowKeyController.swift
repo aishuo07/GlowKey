@@ -65,6 +65,18 @@ public struct GlowKeyController: Sendable {
         _ = try applyBrightness(brightness, selector: selector)
     }
 
+    public func currentBrightness(for display: Display) -> Int? {
+        if let brightness = nativeBrightnessBackend.currentBrightness(for: display) {
+            return brightness
+        }
+
+        if let brightness = ddcBrightnessBackend.currentBrightness(for: display) {
+            return brightness
+        }
+
+        return nil
+    }
+
     public func applyBrightness(_ brightness: Brightness, selector: DisplaySelector) throws -> BrightnessApplication {
         let selectedDisplays = try selectDisplays(selector)
         guard !selectedDisplays.isEmpty else {
