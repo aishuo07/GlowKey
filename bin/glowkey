@@ -13,12 +13,14 @@ DEBUG_DAEMON="$ROOT_DIR/.build/debug/glowkey-daemon"
 RELEASE_MENUBAR="$ROOT_DIR/.build/release/glowkey-menubar"
 DEBUG_MENUBAR="$ROOT_DIR/.build/debug/glowkey-menubar"
 
-if [ -x "$RELEASE_BIN" ] && [ -x "$RELEASE_SHADE" ] && [ -x "$RELEASE_HOTKEYS" ] && [ -x "$RELEASE_DAEMON" ] && [ -x "$RELEASE_MENUBAR" ]; then
-  exec "$RELEASE_BIN" "$@"
+if [ -x "$DEBUG_BIN" ] && [ -x "$DEBUG_SHADE" ] && [ -x "$DEBUG_HOTKEYS" ] && [ -x "$DEBUG_DAEMON" ] && [ -x "$DEBUG_MENUBAR" ]; then
+  if [ ! -x "$RELEASE_BIN" ] || [ "$DEBUG_BIN" -nt "$RELEASE_BIN" ]; then
+    exec "$DEBUG_BIN" "$@"
+  fi
 fi
 
-if [ -x "$DEBUG_BIN" ] && [ -x "$DEBUG_SHADE" ] && [ -x "$DEBUG_HOTKEYS" ] && [ -x "$DEBUG_DAEMON" ] && [ -x "$DEBUG_MENUBAR" ]; then
-  exec "$DEBUG_BIN" "$@"
+if [ -x "$RELEASE_BIN" ] && [ -x "$RELEASE_SHADE" ] && [ -x "$RELEASE_HOTKEYS" ] && [ -x "$RELEASE_DAEMON" ] && [ -x "$RELEASE_MENUBAR" ]; then
+  exec "$RELEASE_BIN" "$@"
 fi
 
 swift build --package-path "$ROOT_DIR"

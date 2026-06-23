@@ -519,24 +519,27 @@ struct GlowKeyCLI {
         }
 
         let symlinkURL = binURL.appendingPathComponent("glowkey")
-        if fileManager.fileExists(atPath: symlinkURL.path) {
-            try fileManager.removeItem(at: symlinkURL)
-        }
+        try removeExistingFileOrSymlink(at: symlinkURL, fileManager: fileManager)
         try fileManager.createSymbolicLink(
             at: symlinkURL,
             withDestinationURL: macOSURL.appendingPathComponent("glowkey")
         )
 
         let legacySymlinkURL = binURL.appendingPathComponent("lumensync")
-        if fileManager.fileExists(atPath: legacySymlinkURL.path) {
-            try fileManager.removeItem(at: legacySymlinkURL)
-        }
+        try removeExistingFileOrSymlink(at: legacySymlinkURL, fileManager: fileManager)
         try fileManager.createSymbolicLink(
             at: legacySymlinkURL,
             withDestinationURL: macOSURL.appendingPathComponent("glowkey")
         )
 
         return appURL
+    }
+
+    private static func removeExistingFileOrSymlink(at url: URL, fileManager: FileManager) throws {
+        if fileManager.fileExists(atPath: url.path)
+            || (try? fileManager.destinationOfSymbolicLink(atPath: url.path)) != nil {
+            try fileManager.removeItem(at: url)
+        }
     }
 
     private static func currentAppBundleURL() -> URL? {
@@ -632,6 +635,26 @@ struct GlowKeyCLI {
     private static func buildReleaseBinariesIfPossible() throws {
         let packageRoot = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
         guard FileManager.default.fileExists(atPath: packageRoot.appendingPathComponent("Package.swift").path) else {
+            return
+        }
+
+        let releaseDirectory = packageRoot
+            .appendingPathComponent(".build", isDirectory: true)
+            .appendingPathComponent("release", isDirectory: true)
+        let releaseGlowKeyURL = releaseDirectory.appendingPathComponent("glowkey")
+        let requiredBinaries = [
+            "glowkey",
+            "glowkey-shade",
+            "glowkey-hotkeys",
+            "glowkey-daemon",
+            "glowkey-menubar"
+        ]
+        let hasReleaseBinaries = requiredBinaries.allSatisfy { binary in
+            FileManager.default.isExecutableFile(atPath: releaseDirectory.appendingPathComponent(binary).path)
+        }
+        let currentExecutableURL = URL(fileURLWithPath: CommandLine.arguments[0]).standardizedFileURL
+
+        if hasReleaseBinaries, currentExecutableURL.path == releaseGlowKeyURL.standardizedFileURL.path {
             return
         }
 
