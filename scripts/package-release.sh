@@ -66,7 +66,11 @@ Install:
 
 Homebrew:
   brew tap aishuo07/glowkey
-  brew trust aishuo07/glowkey
+  brew install --cask glowkey
+  open /Applications/GlowKey.app
+
+If Homebrew refuses the third-party tap:
+  brew trust --tap aishuo07/glowkey
   brew install --cask glowkey
 
 CLI after install:

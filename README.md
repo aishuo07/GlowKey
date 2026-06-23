@@ -21,12 +21,18 @@ Plain F1/F2 keep controlling the MacBook display. GlowKey shortcuts control exte
 
 ```sh
 brew tap aishuo07/glowkey
-brew trust aishuo07/glowkey
 brew install --cask glowkey
 open /Applications/GlowKey.app
 ```
 
-Homebrew 6 requires `brew trust` for third-party taps. GlowKey is currently unsigned, so the cask clears quarantine after install to avoid macOS showing a misleading “damaged” warning.
+If Homebrew refuses to load the third-party tap, trust it once and retry:
+
+```sh
+brew trust --tap aishuo07/glowkey
+brew install --cask glowkey
+```
+
+GlowKey is currently unsigned and not notarized. The Homebrew cask clears the Homebrew quarantine flag after install to avoid macOS showing a misleading “damaged” warning. If macOS still blocks launch, use the troubleshooting step below.
 
 To upgrade:
 
@@ -50,9 +56,15 @@ brew uninstall --cask glowkey
 
 Right-click open is needed until GlowKey is signed and notarized with an Apple Developer account.
 
+Optional CLI-only setup from the zip:
+
+```sh
+/Applications/GlowKey.app/Contents/MacOS/glowkey install
+```
+
 ## First Launch
 
-Open `GlowKey.app`. It starts:
+Open `GlowKey.app`. First launch sets up:
 
 - The menu-bar app.
 - The reconnect/background restore helper.
@@ -136,6 +148,8 @@ If macOS still blocks it:
 find /Applications/GlowKey.app -exec xattr -d com.apple.quarantine {} \; 2>/dev/null || true
 open /Applications/GlowKey.app
 ```
+
+Only run this if you downloaded GlowKey from the official GitHub release or installed it from the official Homebrew tap.
 
 ### Shortcuts Do Not Work
 

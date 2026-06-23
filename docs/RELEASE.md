@@ -4,9 +4,9 @@ This guide covers the current unsigned release flow: GitHub Releases first, then
 
 ## Current Limitation
 
-GlowKey is not signed or notarized yet. macOS will require users to right-click `GlowKey.app` and choose `Open` on first launch.
+GlowKey is not signed or notarized yet. Zip users should right-click `GlowKey.app` and choose `Open` on first launch.
 
-Homebrew does not remove this Gatekeeper requirement for an unsigned app bundle. It only makes download and installation easier.
+The Homebrew cask currently clears Homebrew quarantine after install to avoid the misleading unsigned-app “damaged” warning. This is an alpha distribution workaround, not a replacement for proper Apple signing and notarization.
 
 ## 1. Prepare A GitHub Repository
 
@@ -166,12 +166,18 @@ User install:
 
 ```sh
 brew tap YOUR_GITHUB_USERNAME/glowkey
-brew trust YOUR_GITHUB_USERNAME/glowkey
 brew install --cask glowkey
 open /Applications/GlowKey.app
 ```
 
-Homebrew 6 requires explicit trust for third-party taps. Without `brew trust`, users may see:
+If Homebrew refuses to load the tap, users can trust it once and retry:
+
+```sh
+brew trust --tap YOUR_GITHUB_USERNAME/glowkey
+brew install --cask glowkey
+```
+
+Some Homebrew 6 setups require explicit trust for third-party taps. Without trust, users may see:
 
 ```text
 Refusing to load cask ... from untrusted tap
@@ -179,7 +185,7 @@ Refusing to load cask ... from untrusted tap
 
 Until GlowKey is Apple-notarized, the Homebrew cask should clear quarantine in `postflight`. Without that, macOS may show a misleading “damaged” warning for the unsigned app.
 
-Because the app is unsigned, users may still need:
+Zip users may still need:
 
 ```text
 Right-click GlowKey.app -> Open -> Open
