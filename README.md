@@ -2,6 +2,8 @@
 
 Zero-config brightness control for Mac external displays.
 
+Website: [aishuo07.github.io/GlowKey](https://aishuo07.github.io/GlowKey/)
+
 GlowKey keeps the normal Mac brightness keys for the built-in display, then adds simple external-display control from the menu bar, keyboard shortcuts, and CLI.
 
 ## What It Does
