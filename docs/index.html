@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta
       name="description"
-      content="GlowKey is a transparent macOS menu bar app for external display brightness."
+      content="GlowKey is a glassy macOS menu bar app for external display brightness."
     >
     <meta property="og:title" content="GlowKey">
     <meta
@@ -14,20 +14,23 @@
     >
     <meta property="og:type" content="website">
     <meta property="og:url" content="https://aishuo07.github.io/GlowKey/">
-    <meta name="theme-color" content="#111821">
-    <title>GlowKey - Transparent Mac brightness control</title>
+    <meta name="theme-color" content="#071019">
+    <title>GlowKey - Mac brightness for external displays</title>
     <link rel="stylesheet" href="./styles.css">
   </head>
   <body>
-    <div class="desktop-glow" aria-hidden="true">
-      <span class="orb orb-yellow"></span>
-      <span class="orb orb-blue"></span>
-      <span class="orb orb-white"></span>
+    <div class="scene" aria-hidden="true">
+      <span class="aurora aurora-warm"></span>
+      <span class="aurora aurora-blue"></span>
+      <span class="aurora aurora-silver"></span>
+      <span class="desktop-line line-one"></span>
+      <span class="desktop-line line-two"></span>
+      <span class="desktop-line line-three"></span>
     </div>
 
-    <header class="liquid-nav">
+    <header class="topbar glass">
       <a class="brand" href="#top" aria-label="GlowKey home">
-        <span class="sun-logo" aria-hidden="true"></span>
+        <span class="mark" aria-hidden="true"></span>
         <span>GlowKey</span>
       </a>
       <nav aria-label="Primary navigation">
@@ -39,128 +42,106 @@
 
     <main id="top">
       <section class="hero">
-        <div class="copy-panel liquid-panel">
-          <p class="eyebrow">Liquid glass alpha for macOS</p>
-          <h1>
-            <span>Brightness,</span>
-            <span>without the</span>
-            <span>monitor drama.</span>
-          </h1>
-          <p>
-            GlowKey makes external display brightness feel like it belongs on
-            your Mac. Real hardware brightness when possible, silent fallback
-            dimming when it is not.
+        <div class="hero-copy">
+          <p class="eyebrow">Transparent alpha for macOS</p>
+          <h1>Brightness that feels built in.</h1>
+          <p class="lead">
+            GlowKey gives every external monitor a Mac-like brightness control.
+            It tries real hardware brightness first, then quietly falls back so
+            the screen still dims.
           </p>
-          <div class="actions">
+          <div class="hero-actions">
             <a class="button primary" href="#install">Install alpha</a>
-            <a class="button ghost" href="https://github.com/aishuo07/GlowKey">
-              View GitHub
+            <a class="button secondary" href="https://github.com/aishuo07/GlowKey">
+              View source
             </a>
           </div>
         </div>
 
-        <div class="showcase" aria-label="GlowKey interface preview">
-          <div class="glass-menu liquid-panel">
-            <div class="menu-header">
-              <div class="menu-title">
-                <span class="sun-logo large" aria-hidden="true"></span>
-                <div>
-                  <strong>GlowKey</strong>
-                  <span>Display brightness</span>
-                </div>
-              </div>
-              <div class="menu-actions" aria-hidden="true">
-                <span>↻</span>
-                <span>×</span>
-              </div>
-            </div>
-
-            <div class="display-tile">
-              <div class="display-heading">
-                <span class="screen laptop" aria-hidden="true"></span>
-                <strong>MacBook Pro</strong>
-                <b>72%</b>
-              </div>
-              <div class="slider-row">
-                <span class="sun small" aria-hidden="true"></span>
-                <div class="track"><span style="width: 72%"></span></div>
-                <span class="sun tiny-rays" aria-hidden="true"></span>
-              </div>
-            </div>
-
-            <div class="display-tile external">
-              <div class="display-heading">
-                <span class="screen" aria-hidden="true"></span>
-                <strong>DELL P3223QE</strong>
-                <b>54%</b>
-              </div>
-              <div class="slider-row">
-                <span class="sun small" aria-hidden="true"></span>
-                <div class="track"><span style="width: 54%"></span></div>
-                <span class="sun tiny-rays" aria-hidden="true"></span>
-              </div>
-            </div>
-
-            <div class="permission-pill">
+        <div class="app-preview glass" aria-label="GlowKey app preview">
+          <div class="preview-top">
+            <div class="preview-title">
+              <span class="mark large" aria-hidden="true"></span>
               <div>
-                <strong>Shortcuts need access</strong>
-                <span>Enable Accessibility permission</span>
+                <strong>GlowKey</strong>
+                <span>Display brightness</span>
               </div>
-              <a href="#experience">Open</a>
             </div>
-
-            <div class="toggle-strip">
-              <span>Sync Off</span>
-              <span>fn + F1 / F2</span>
+            <div class="preview-buttons" aria-hidden="true">
+              <span></span>
+              <span></span>
             </div>
           </div>
 
-          <div class="floating-note note-left liquid-panel">
-            <span>Cursor-aware</span>
-            <strong>Control the screen under your mouse.</strong>
+          <div class="display-card">
+            <div class="display-meta">
+              <span class="device laptop" aria-hidden="true"></span>
+              <strong>MacBook Pro</strong>
+              <b>82%</b>
+            </div>
+            <div class="slider">
+              <span class="sun min" aria-hidden="true"></span>
+              <div class="rail"><span style="width: 82%"></span></div>
+              <span class="sun max" aria-hidden="true"></span>
+            </div>
           </div>
 
-          <div class="floating-note note-right liquid-panel">
-            <span>Native first</span>
-            <strong>Mac brightness keys stay Mac-native.</strong>
+          <div class="display-card active">
+            <div class="display-meta">
+              <span class="device" aria-hidden="true"></span>
+              <strong>DELL P3223QE</strong>
+              <b>54%</b>
+            </div>
+            <div class="slider">
+              <span class="sun min" aria-hidden="true"></span>
+              <div class="rail"><span style="width: 54%"></span></div>
+              <span class="sun max" aria-hidden="true"></span>
+            </div>
+          </div>
+
+          <div class="shortcut-card">
+            <div>
+              <strong>Cursor display</strong>
+              <span>fn + F1 / F2 controls the screen under your mouse.</span>
+            </div>
+            <span class="keycap">native</span>
+          </div>
+
+          <div class="segmented">
+            <span>Sync Off</span>
+            <span>Shortcuts On</span>
           </div>
         </div>
       </section>
 
-      <section id="experience" class="experience">
-        <article class="experience-card liquid-panel">
+      <section id="experience" class="experience" aria-label="GlowKey behavior">
+        <article class="mini-card glass">
           <span>01</span>
-          <h2>Real when possible.</h2>
-          <p>Uses monitor hardware brightness on compatible USB-C and DisplayPort paths.</p>
+          <strong>No setup brain.</strong>
+          <p>Users move a slider. GlowKey chooses the best backend silently.</p>
         </article>
-        <article class="experience-card liquid-panel">
+        <article class="mini-card glass">
           <span>02</span>
-          <h2>Still works otherwise.</h2>
-          <p>Falls back to smooth software dimming when adapters or docks block control.</p>
+          <strong>Mac stays Mac.</strong>
+          <p>Built-in display brightness remains native. External screens get their own controls.</p>
         </article>
-        <article class="experience-card liquid-panel">
+        <article class="mini-card glass">
           <span>03</span>
-          <h2>No debug UI.</h2>
-          <p>Normal users see brightness controls, not DDC, VCP, gamma, or cable protocol names.</p>
+          <strong>Works anyway.</strong>
+          <p>Hardware brightness when possible. Smooth dimming when cables or docks block it.</p>
         </article>
       </section>
 
-      <section id="install" class="install liquid-panel">
+      <section id="install" class="install glass">
         <div>
           <p class="eyebrow">Install</p>
-          <h2>Try the alpha.</h2>
+          <h2>Try the public alpha.</h2>
           <p>
-            Unsigned for now. Homebrew is easiest. ZIP releases are available
-            from GitHub too.
+            Homebrew is the simplest path while the app is unsigned. ZIP builds
+            are available on GitHub releases too.
           </p>
         </div>
-
-        <div class="terminal">
-          <div class="terminal-dots" aria-hidden="true">
-            <span></span>
-            <span></span>
-            <span></span>
-          </div>
+        <div class="terminal" aria-label="Install commands">
           <pre><code>brew tap aishuo07/glowkey
 brew install --cask glowkey
 open /Applications/GlowKey.app</code></pre>
@@ -169,7 +150,7 @@ open /Applications/GlowKey.app</code></pre>
     </main>
 
     <footer>
-      <span>Built in the open.</span>
+      <span>Built for people who just want brightness to work.</span>
       <a href="https://github.com/aishuo07/GlowKey">github.com/aishuo07/GlowKey</a>
     </footer>
   </body>
